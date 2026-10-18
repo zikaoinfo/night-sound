@@ -212,7 +212,7 @@ function exportJson() {
     { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  a.href = url; a.download = "night-sound-session.json";
+  a.href = url; a.download = "sonora-session.json";
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

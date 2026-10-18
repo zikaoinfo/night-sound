@@ -1,4 +1,4 @@
-# Running Night Sound on your iPhone / iPad (Capacitor)
+# Running Sonora on your iPhone / iPad (Capacitor)
 
 This wraps the `web/` app into a native iOS (and Android) app. You install it
 from Xcode onto your own device — **no $99 account needed for that**; a free
@@ -60,7 +60,7 @@ Open `ios/App/App/Info.plist` in Xcode and add:
 
 ```xml
 <key>NSMicrophoneUsageDescription</key>
-<string>Night Sound listens for snoring and other sounds while you sleep. Audio is analysed on your device and is never uploaded.</string>
+<string>Sonora listens for snoring and other sounds while you sleep. Audio is analysed on your device and is never uploaded.</string>
 
 <!-- needed for milestone 2 (background recording) -->
 <key>UIBackgroundModes</key>
@@ -76,9 +76,9 @@ kills the app the moment it asks for the mic.
 
 ## Changing the app identity
 
-`capacitor.config.json` sets `appId` (`com.zikao.nightsound`) and `appName`
-(`Night Sound`). Change `appId` to your own reverse-domain id before you ever
-ship to a store; for local device testing anything unique works.
+`capacitor.config.json` sets `appId` (`com.zikao.sonora`) and `appName`
+(`Sonora`). Adjust `appId` to your own reverse-domain id before you ever ship to
+a store; for local device testing anything unique works.
 
 ---
 

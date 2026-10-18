@@ -1,8 +1,8 @@
 {
-  "name": "night-sound-app",
+  "name": "sonora-app",
   "version": "0.1.0",
   "private": true,
-  "description": "Night Sound — on-device snore & sleep-sound monitor, wrapped for iOS + Android with Capacitor.",
+  "description": "Sonora — on-device snore & sleep-sound monitor, wrapped for iOS + Android with Capacitor.",
   "scripts": {
     "sync": "cap sync",
     "ios": "cap sync ios && cap open ios",

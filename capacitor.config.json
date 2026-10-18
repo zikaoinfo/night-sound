@@ -1,6 +1,6 @@
 {
-  "appId": "com.zikao.nightsound",
-  "appName": "Night Sound",
+  "appId": "com.zikao.sonora",
+  "appName": "Sonora",
   "webDir": "web",
   "ios": {
     "contentInset": "always",

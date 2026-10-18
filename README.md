@@ -1,4 +1,7 @@
-# night-sound
+# night-sound · Sonora
+
+The engine and app behind **Sonora** — an on-device snore & sleep-sound
+monitor (product name Sonora; this repo stays `night-sound`).
 
 A dependency-light engine that detects and analyses **snoring** and other
 night-time sounds in an overnight audio recording — the analysis core

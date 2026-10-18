@@ -1,4 +1,4 @@
-# Night Sound — web app
+# Sonora — web app
 
 The on-device snore & night-sound monitor, in plain HTML/CSS/JS (no build
 step, no framework). This is also the **foundation for the iOS + Android

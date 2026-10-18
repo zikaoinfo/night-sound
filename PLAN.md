@@ -1,4 +1,6 @@
-# Night Sound — Project Plan
+# Sonora — Project Plan
+
+_(product name **Sonora**; git repo stays `night-sound`, engine package `nightsound`)_
 
 An on-device app that listens through the night, detects and scores **snoring**,
 and flags other notable sounds — the quality of SnoreLab / iRonfle, built fresh,
@@ -123,9 +125,7 @@ acceptable battery use.
    Benchmark + harness in `bench/`; the accuracy benchmark that decides tuning
    needs real labelled nights (Phase 3). ✅
 
-### Still open
-5. **Name** — candidates: Sonora, Lull, Nocturne, Night Sound, Dormi. _Leaning
-   Sonora or Lull._
+5. **Name: Sonora.** ✅ (`appId` com.zikao.sonora). All decisions resolved.
 
 ---
 
