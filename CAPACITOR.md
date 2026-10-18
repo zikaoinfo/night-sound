@@ -17,7 +17,7 @@ In a plain browser the same UI falls back to Web Audio (screen must stay on).
 ## Prerequisites (on your Mac)
 
 - **Xcode** (from the App Store) + command line tools.
-- **Node 20+** and **CocoaPods**: `sudo gem install cocoapods` (or `brew install cocoapods`).
+- **Node 20+** (https://nodejs.org or `brew install node`). CocoaPods is not needed: Capacitor 8 uses Swift Package Manager.
 
 ## Build it (milestone 1)
 
