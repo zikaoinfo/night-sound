@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Night Sound</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="wrap">
+    <header class="top">
+      <h1>Night&nbsp;Sound</h1>
+      <p class="tag">Snore &amp; sleep-sound monitor — everything stays on your device</p>
+    </header>
+
+    <section class="score-card" id="scoreCard">
+      <div class="score-num"><span id="scoreVal">—</span><span class="score-max">/100</span></div>
+      <div class="score-label">Snore Score</div>
+      <div class="score-sub" id="scoreSub">Press start to begin listening</div>
+    </section>
+
+    <section class="stats" id="stats">
+      <div class="stat"><div class="stat-val" id="statTime">0:00</div><div class="stat-key">time snoring</div></div>
+      <div class="stat"><div class="stat-val" id="statPct">0%</div><div class="stat-key">of session</div></div>
+      <div class="stat"><div class="stat-val" id="statEvents">0</div><div class="stat-key">snore events</div></div>
+      <div class="stat"><div class="stat-val" id="statEpisodes">0</div><div class="stat-key">episodes</div></div>
+    </section>
+
+    <section class="intensity" id="intensity" hidden>
+      <div class="int-row">
+        <span class="int-cell" data-k="quiet">quiet <b id="iQuiet">0</b></span>
+        <span class="int-cell" data-k="light">light <b id="iLight">0</b></span>
+        <span class="int-cell" data-k="loud">loud <b id="iLoud">0</b></span>
+        <span class="int-cell" data-k="epic">epic <b id="iEpic">0</b></span>
+      </div>
+    </section>
+
+    <section class="live">
+      <div class="meter"><div class="meter-fill" id="meterFill"></div><div class="meter-thresh" id="meterThresh"></div></div>
+      <div class="live-row">
+        <span id="liveState" class="dot-idle">idle</span>
+        <span id="liveFloor">floor —</span>
+        <span id="liveClock">0:00</span>
+      </div>
+    </section>
+
+    <canvas id="timeline" class="timeline" width="800" height="150" aria-label="Night sound timeline"></canvas>
+    <div class="legend">
+      <span data-k="quiet">quiet</span><span data-k="light">light</span>
+      <span data-k="loud">loud</span><span data-k="epic">epic</span>
+      <span data-k="other">other sound</span>
+    </div>
+
+    <div class="controls">
+      <button id="btnStart" class="btn primary">Start listening</button>
+      <button id="btnStop" class="btn" hidden>Stop</button>
+      <button id="btnExport" class="btn ghost" hidden>Export JSON</button>
+    </div>
+
+    <section class="events">
+      <h2>Recent sounds</h2>
+      <ul id="eventList" class="event-list"><li class="empty">No sounds yet.</li></ul>
+    </section>
+
+    <p class="note" id="note"></p>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

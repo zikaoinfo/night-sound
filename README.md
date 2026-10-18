@@ -79,9 +79,17 @@ print(rep.snore_score, rep.snore_percent, len(rep.episodes))
   probability cutoff) or re-weight `_snore_probability()`.
 - Different breathing cadence → `BREATH_MIN_S` / `BREATH_MAX_S`.
 
+## Live web app
+
+`web/` is an on-device browser app (live mic monitoring, Snore Score,
+timeline, clip playback, JSON export) built on a JavaScript port of this
+engine — and the foundation for the iOS + Android apps via Capacitor. See
+[`web/README.md`](web/README.md) for how to run it and the path to the app
+stores.
+
 ## Status
 
-v0.1 — core engine, validated on a synthetic night (recovers planted
-episodes and rejects one-off sounds). Next candidates: per-recording
-calibration, an optional learned classifier, and a thin UI (web or mobile)
-over this engine.
+v0.1 — Python engine + matching JS engine and web UI, both validated
+(Python on a synthetic night; the web app end-to-end headless in Chromium).
+Next candidates: per-recording calibration, an optional learned classifier,
+and the Capacitor native wrapper for all-night background recording.
