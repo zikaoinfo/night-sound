@@ -295,11 +295,41 @@ public final class SnoreEngine {
         return "epic";
     }
 
+    /** A snore candidate outside any rhythmic run needs at least this probability. */
+    public static final double LONE_SNORE_MIN = 0.65;
+
+    /** Marks snore candidates in rhythmic runs (>= 3 at breathing rate); returns the run count. */
+    static int markEpisodes(List<Event> events, boolean[] inEpisode) {
+        int episodes = 0;
+        List<Integer> run = new ArrayList<>();
+        for (int i = 0; i <= events.size(); i++) {
+            boolean end = i == events.size();
+            if (!end && !events.get(i).isSnore) continue;
+            boolean continues = !end && !run.isEmpty() && inBreathRange(
+                    events.get(i).startS - events.get(run.get(run.size() - 1)).startS);
+            if (!continues) {
+                if (run.size() >= 3) {
+                    episodes++;
+                    for (int j : run) inEpisode[j] = true;
+                }
+                run.clear();
+            }
+            if (!end) run.add(i);
+        }
+        return episodes;
+    }
+
+    private static boolean inBreathRange(double gapS) { return gapS >= 1.5 && gapS <= 6.0; }
+
     public static Summary summarize(List<Event> events, double durationS) {
         Summary s = new Summary();
+        boolean[] inEpisode = new boolean[events.size()];
+        s.episodes = markEpisodes(events, inEpisode);
         List<Event> snores = new ArrayList<>();
-        for (Event e : events) {
-            if (e.isSnore) snores.add(e);
+        for (int i = 0; i < events.size(); i++) {
+            Event e = events.get(i);
+            boolean confirmed = e.isSnore && (inEpisode[i] || e.snoreProb >= LONE_SNORE_MIN);
+            if (confirmed) snores.add(e);
             else if (e.intensity.equals("loud") || e.intensity.equals("epic")) s.weirdSounds++;
         }
         int loud = 0, epic = 0;
@@ -313,16 +343,6 @@ public final class SnoreEngine {
         s.snoresPerHour = durationS > 0 ? snores.size() / (durationS / 3600) : 0;
         double loudFrac = snores.isEmpty() ? 0 : (0.5 * loud + epic) / snores.size();
         s.snoreScore = 100 * (0.65 * Math.min(s.snorePercent, 60) / 60 + 0.35 * loudFrac);
-
-        int run = 0;
-        double lastStart = Double.NEGATIVE_INFINITY;
-        for (Event e : snores) {
-            double gap = e.startS - lastStart;
-            if (gap >= 1.5 && gap <= 6.0) run++;
-            else { if (run >= 3) s.episodes++; run = 1; }
-            lastStart = e.startS;
-        }
-        if (run >= 3) s.episodes++;
         return s;
     }
 

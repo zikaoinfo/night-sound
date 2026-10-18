@@ -30,6 +30,8 @@ MAX_EVENT_S = 8.0            # cap a single event; longer runs get split
 
 # snore-shaped breathing cycle: one snore every ~1.5–6 s
 BREATH_MIN_S, BREATH_MAX_S = 1.5, 6.0
+# a snore candidate that isn't part of a rhythmic run needs at least this probability
+LONE_SNORE_MIN = 0.65
 
 EPS = 1e-10
 
@@ -294,6 +296,7 @@ def analyse(
 
     # rhythm: confirm snoring that recurs at breathing rate
     rep.episodes = _mark_episodes(rep.events)
+    _apply_lone_rule(rep.events)
 
     # aggregates
     snores = [e for e in rep.events if e.is_snore]
@@ -322,6 +325,19 @@ def analyse(
 def _session_score(rep: SessionReport) -> float:
     """Headline 0–100. Blends how much of the night you snored with how loud."""
     pct = min(rep.snore_percent, 60.0) / 60.0           # saturate at 60%
-    loud = rep.intensity_counts.get("loud", 0) + 2 * rep.intensity_counts.get("epic", 0)
+    # 0..1: half weight for loud snores, full weight for epic ones
+    loud = 0.5 * rep.intensity_counts.get("loud", 0) + rep.intensity_counts.get("epic", 0)
     loud_frac = loud / max(rep.snore_events, 1)
     return 100.0 * (0.65 * pct + 0.35 * loud_frac)
+
+
+def _apply_lone_rule(events: list[Event]) -> None:
+    """A snore-like sound outside any breathing-rate run must be more confident.
+
+    Thuds and coughs can look spectrally like a snore, but they don't repeat
+    every few seconds. Run after _mark_episodes.
+    """
+    for e in events:
+        if e.is_snore and not e.in_episode and e.snore_prob < LONE_SNORE_MIN:
+            e.is_snore = False
+            e.label = "other"

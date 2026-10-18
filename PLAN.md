@@ -99,11 +99,18 @@ acceptable battery use.
 
 ### Phase 3 — Detection quality
 **Goal:** trustworthy snore vs. not, tuned to real bedrooms.
-- [ ] Collect a handful of your own real nights (varied: quiet, loud, partner,
-      fan/AC, street noise).
-- [ ] Per-recording calibration (noise floor, thresholds).
-- [ ] Tune `_snore_probability` weights; reduce isolated-thud false positives
-      (require episode membership or higher confidence for lone events).
+- [x] Lone-sound rule in all four engines: a snore candidate outside a
+      rhythmic run needs probability ≥ 0.65. Synthetic night now yields
+      exactly the 34 planted snores; cough/thud/mumble become "other".
+- [x] Score fix in all engines: loud = ½, epic = 1 (was 1 and 2, so the
+      score could pass 100).
+- [x] Labelling + accuracy tool: `analyse --clips all`, then
+      `python -m nightsound evaluate labelled/` (precision/recall sweep,
+      suggested thresholds, misclassified clips).
+- [x] Per-recording calibration: adaptive noise floor (already per night).
+- [ ] **Your part:** record a few real nights (quiet, loud, partner, fan/AC,
+      street noise), label the clips, run `evaluate`, and send me the output.
+- [ ] Tune `_snore_probability` weights from that data.
 - [ ] Optional: small learned classifier (e.g. logistic regression / tiny CNN on
       log-mel) behind the same `Event` interface, trained on labelled clips.
 **Done when:** on your nights, snore episodes match what you'd mark by ear.

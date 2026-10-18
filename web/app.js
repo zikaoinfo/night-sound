@@ -290,7 +290,7 @@ function drawTimeline(snap, r) {
 
   for (const e of snap.events) {
     const x0 = (e.startS / dur) * w, x1 = Math.max(x0 + 2, (e.endS / dur) * w);
-    if (e.isSnore) {
+    if (e.confirmedSnore) {
       ctx.fillStyle = COLORS[e.intensity] || COLORS.light;
       ctx.fillRect(x0, 8, x1 - x0, h - 24);
     } else if (e.intensity === "loud" || e.intensity === "epic") {
@@ -308,12 +308,13 @@ function getToken(name) {
 function renderEvents() {
   const ul = $("eventList");
   const snap = source && source.snapshot();
+  if (snap) computeReport(snap);              // sets confirmedSnore on each event
   const recent = snap ? snap.events.slice(-30).reverse() : [];
   if (!recent.length) { ul.innerHTML = '<li class="empty">No sounds yet.</li>'; return; }
   ul.innerHTML = "";
   for (const e of recent) {
     const li = document.createElement("li");
-    const badge = e.isSnore ? "snore" : "other";
+    const badge = e.confirmedSnore ? "snore" : "other";
     li.innerHTML =
       `<span class="ev-time">${fmt(e.startS)}</span>` +
       `<span class="ev-badge ${badge}">${badge}</span>` +

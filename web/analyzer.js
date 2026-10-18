@@ -14,6 +14,7 @@ export const CFG = {
   mergeGapS: 0.35,
   breathMinS: 1.5,
   breathMaxS: 6.0,
+  loneSnoreMin: 0.65,       // a lone (non-rhythmic) snore candidate needs this probability
   noiseWindowS: 90,         // how much recent audio informs the noise floor
 };
 
@@ -206,8 +207,10 @@ export class SnoreAnalyzer {
   }
 }
 
-// Rhythmic snoring runs: >= 3 snores spaced at breathing rate.
+// Rhythmic snoring runs: >= 3 snore candidates spaced at breathing rate.
+// Marks e.inEpisode on their members.
 export function episodesOf(events) {
+  events.forEach((e) => (e.inEpisode = false));
   const snores = events.filter((e) => e.isSnore);
   const eps = [];
   let run = [];
@@ -236,15 +239,23 @@ export function episodesOf(events) {
 
 // Session aggregates from a list of events. Used for live web sessions and
 // for sessions recorded by the native plugin.
+//
+// `isSnore` on an event is the engine's per-sound verdict. A snore-like sound
+// outside any rhythmic run (a thud, a cough) must also reach LONE_SNORE_MIN;
+// the final verdict lands on e.confirmedSnore, which the UI shows.
 export function computeReport({ events, durationS, noiseFloorDbfs }) {
   const duration = durationS || 0;
-  const snores = events.filter((e) => e.isSnore);
+  const episodes = episodesOf(events);
+  events.forEach((e) => {
+    e.confirmedSnore = e.isSnore && (e.inEpisode || e.snoreProb >= CFG.loneSnoreMin);
+  });
+  const snores = events.filter((e) => e.confirmedSnore);
   const snoreTime = snores.reduce((a, e) => a + e.durationS, 0);
   const counts = { quiet: 0, light: 0, loud: 0, epic: 0 };
   snores.forEach((e) => (counts[e.intensity]++));
 
   const pct = duration ? (100 * snoreTime) / duration : 0;
-  const loud = counts.loud + 2 * counts.epic;
+  const loud = 0.5 * counts.loud + counts.epic;   // 0..1 per snore
   const loudFrac = loud / Math.max(snores.length, 1);
   const score = 100 * (0.65 * (Math.min(pct, 60) / 60) + 0.35 * loudFrac);
 
@@ -257,9 +268,9 @@ export function computeReport({ events, durationS, noiseFloorDbfs }) {
     snoresPerHour: duration ? snores.length / (duration / 3600) : 0,
     snoreScore: score,
     intensityCounts: counts,
-    episodes: episodesOf(events),
+    episodes,
     weirdSounds: events
-      .filter((e) => !e.isSnore && (e.intensity === "loud" || e.intensity === "epic"))
+      .filter((e) => !e.confirmedSnore && (e.intensity === "loud" || e.intensity === "epic"))
       .map((e) => ({ startS: e.startS, peakDbfs: e.peakDbfs, intensity: e.intensity, centroid: e.centroid })),
   };
 }

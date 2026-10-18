@@ -33,12 +33,35 @@ def test_episode_rhythm_is_breathing_rate():
             assert 1.5 <= ep["mean_interval_s"] <= 6.0, ep
 
 
-def test_reports_a_weird_sound():
+def test_one_off_sounds_are_not_snores():
     with tempfile.TemporaryDirectory() as tmp:
         rep = analyse(_build(tmp))
-        # the planted cough is loud and high-ish; it must not vanish silently
-        assert rep.duration_s > 290
-        assert rep.snore_score > 0
+        # exactly the 9 + 14 + 11 planted snores; the cough, thud and mumble
+        # are reported as other loud sounds, not snores
+        assert rep.snore_events == 34, rep.snore_events
+        starts = sorted(round(w["start_s"]) for w in rep.weird_sounds)
+        assert starts == [60, 150, 240], starts
+
+
+def test_score_stays_in_range():
+    with tempfile.TemporaryDirectory() as tmp:
+        rep = analyse(_build(tmp))
+        assert 0 < rep.snore_score <= 100, rep.snore_score
+
+
+def test_evaluate_on_labelled_clips():
+    from nightsound import evaluate, report
+    with tempfile.TemporaryDirectory() as tmp:
+        wav = _build(tmp)
+        rep = analyse(wav)
+        clips = report.extract_clips(rep, wav, os.path.join(tmp, "clips"), what="all")
+        labelled = os.path.join(tmp, "labelled")
+        for ev, path in zip(rep.events, clips):
+            folder = os.path.join(labelled, "snore" if ev.in_episode else "other")
+            os.makedirs(folder, exist_ok=True)
+            os.rename(path, os.path.join(folder, os.path.basename(path)))
+        text = evaluate.report(labelled)
+        assert "Suggested snore threshold" in text, text
 
 
 if __name__ == "__main__":

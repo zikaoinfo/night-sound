@@ -102,6 +102,10 @@ def extract_clips(rep: SessionReport, src: str, out_dir: str,
     elif what == "weird":
         for i, w in enumerate(rep.weird_sounds):
             jobs.append((f"weird_{i:02d}", w["start_s"], w["end_s"]))
+    elif what == "all":
+        # every detected sound, for labelling by ear (see nightsound/evaluate.py)
+        for i, e in enumerate(rep.events):
+            jobs.append((f"{i:04d}_{e.label}_{int(e.start_s)}s", e.start_s, e.end_s))
     else:
         raise ValueError(f"unknown clip set {what!r}")
 

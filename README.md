@@ -76,6 +76,20 @@ print(rep.snore_score, rep.snore_percent, len(rep.episodes))
 
 ## Tuning for your room
 
+Measure first, then tune. Pull every detected sound out of a real night,
+listen, and sort the clips into folders:
+
+```bash
+python -m nightsound analyse night.m4a -o out/ --clips all
+# move out/clips/*.wav into labelled/snore/ and labelled/other/
+python -m nightsound evaluate labelled/
+```
+
+`evaluate` prints precision/recall at each threshold, suggests a snore
+threshold and a lone-sound threshold, and lists the clips it got wrong.
+
+The knobs:
+
 - Recording too quiet / too loud → adjust `THRESH_OVER_FLOOR_DB` and
   `ABS_FLOOR_DBFS` in `analysis.py`.
 - Too many / too few snores flagged → raise/lower `--threshold` (the snore

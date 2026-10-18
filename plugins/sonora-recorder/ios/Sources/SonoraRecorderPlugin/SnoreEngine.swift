@@ -183,9 +183,39 @@ final class SnoreEngine {
         return "epic"
     }
 
+    /// A snore candidate outside any rhythmic run needs at least this probability.
+    static let loneSnoreMin = 0.65
+
+    /// Indices of snore candidates in rhythmic runs (>= 3 at breathing rate),
+    /// and how many runs there are.
+    static func episodeMembers(_ events: [SonoraEvent]) -> (members: Set<Int>, episodes: Int) {
+        var members = Set<Int>()
+        var episodes = 0
+        var run: [Int] = []
+        func flush() {
+            if run.count >= 3 { members.formUnion(run); episodes += 1 }
+            run = []
+        }
+        for (i, e) in events.enumerated() where e.isSnore {
+            if let last = run.last, (1.5...6.0).contains(e.startS - events[last].startS) {
+                run.append(i)
+            } else {
+                flush()
+                run = [i]
+            }
+        }
+        flush()
+        return (members, episodes)
+    }
+
     static func summarize(events: [SonoraEvent], durationS: Double) -> SessionSummary {
         var s = SessionSummary()
-        let snores = events.filter { $0.isSnore }
+        let (members, episodes) = episodeMembers(events)
+        let confirmed = Set(events.indices.filter {
+            events[$0].isSnore && (members.contains($0) || events[$0].snoreProb >= loneSnoreMin)
+        })
+        let snores = confirmed.sorted().map { events[$0] }
+        s.episodes = episodes
         s.snoreEvents = snores.count
         s.snoreTimeS = snores.reduce(0) { $0 + $1.durationS }
         s.snorePercent = durationS > 0 ? 100 * s.snoreTimeS / durationS : 0
@@ -194,16 +224,9 @@ final class SnoreEngine {
         let epic = snores.filter { $0.intensity == "epic" }.count
         let loudFrac = snores.isEmpty ? 0 : (0.5 * Double(loud) + Double(epic)) / Double(snores.count)
         s.snoreScore = 100 * (0.65 * min(s.snorePercent, 60) / 60 + 0.35 * loudFrac)
-        s.weirdSounds = events.filter { !$0.isSnore && ($0.intensity == "loud" || $0.intensity == "epic") }.count
-
-        var run = 0
-        var lastStart = -Double.infinity
-        for e in snores {
-            let gap = e.startS - lastStart
-            if gap >= 1.5 && gap <= 6.0 { run += 1 } else { if run >= 3 { s.episodes += 1 }; run = 1 }
-            lastStart = e.startS
-        }
-        if run >= 3 { s.episodes += 1 }
+        s.weirdSounds = events.indices.filter {
+            !confirmed.contains($0) && (events[$0].intensity == "loud" || events[$0].intensity == "epic")
+        }.count
         return s
     }
 

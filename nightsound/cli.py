@@ -11,7 +11,7 @@ import argparse
 import os
 import sys
 
-from . import analysis, report, synth
+from . import analysis, evaluate, report, synth
 
 
 def _run_analyse(args: argparse.Namespace) -> int:
@@ -72,12 +72,16 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("-o", "--out", help="output directory (default: cwd)")
     a.add_argument("-t", "--threshold", type=float, default=0.5,
                    help="snore probability cutoff, 0..1 (default 0.5)")
-    a.add_argument("--clips", choices=["episodes", "snores", "weird"],
+    a.add_argument("--clips", choices=["episodes", "snores", "weird", "all"],
                    help="also extract review clips")
     a.add_argument("--no-json", action="store_true")
     a.add_argument("--no-plot", action="store_true")
     a.add_argument("-q", "--quiet", action="store_true")
     a.set_defaults(func=_run_analyse)
+
+    v = sub.add_parser("evaluate", help="measure accuracy on clips you labelled by ear")
+    v.add_argument("folder", help="folder with one subfolder per label (snore/, other/, ...)")
+    v.set_defaults(func=lambda args: print(evaluate.report(args.folder)) or 0)
 
     d = sub.add_parser("demo", help="generate + analyse a synthetic night")
     d.add_argument("-o", "--out", default="demo_out", help="output directory")
