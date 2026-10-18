@@ -326,6 +326,23 @@ final class NightRecorder {
         return ids.sorted(by: >).compactMap { load(id: $0)?.0 }
     }
 
+    enum ImportResult { case added, exists, invalid }
+
+    /// Restore a night from a backup (data only; clips aren't in backups).
+    static func importSession(json: Data) -> ImportResult {
+        guard var rec = try? JSONDecoder().decode(SessionRecord.self, from: json),
+              rec.id.range(of: #"^\d{8}-\d{6}$"#, options: .regularExpression) != nil else { return .invalid }
+        let dir = root.appendingPathComponent(rec.id, isDirectory: true)
+        if FileManager.default.fileExists(atPath: dir.path) { return .exists }
+        for i in rec.events.indices { rec.events[i].clip = nil }
+        rec.fullRecording = nil
+        guard (try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)) != nil,
+              let data = try? JSONEncoder().encode(rec),
+              (try? data.write(to: dir.appendingPathComponent("session.json"), options: .atomic)) != nil
+        else { return .invalid }
+        return .added
+    }
+
     static func delete(id: String) throws {
         try FileManager.default.removeItem(at: root.appendingPathComponent(id, isDirectory: true))
     }

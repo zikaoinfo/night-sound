@@ -6,7 +6,7 @@
 
 import { computeReport } from "./analyzer.js";
 import { labelOf } from "./tags.js";
-import { getNativeRecorder } from "./native.js";
+import { shareFiles } from "./share.js";
 
 const MAX_CLIPS = 6;
 
@@ -189,13 +189,6 @@ export async function buildReportPdf({ snap, startedAt, meta }, clips = []) {
   return doc.output("blob");
 }
 
-const blobToBase64 = (blob) => new Promise((resolve, reject) => {
-  const fr = new FileReader();
-  fr.onload = () => resolve(String(fr.result).split(",")[1]);
-  fr.onerror = () => reject(fr.error);
-  fr.readAsDataURL(blob);
-});
-
 // Build the PDF plus clips and hand them to the system share sheet.
 // Returns a sentence describing what happened.
 export async function shareReport(night, clipSrc) {
@@ -213,38 +206,10 @@ export async function shareReport(night, clipSrc) {
   const pdfName = `sonora-report-${day}.pdf`;
   files.unshift({ name: pdfName, blob: pdf, type: "application/pdf" });
 
-  const native = await getNativeRecorder();
-  if (native) {
-    const core = await import("./vendor/capacitor-core.js");
-    const Filesystem = core.registerPlugin("Filesystem");
-    const Share = core.registerPlugin("Share");
-    const uris = [];
-    for (const f of files) {
-      const { uri } = await Filesystem.writeFile({ path: `report/${f.name}`, data: await blobToBase64(f.blob),
-                                                   directory: "CACHE", recursive: true });
-      uris.push(uri);
-    }
-    await Share.share({ title: "Sonora night report", files: uris, dialogTitle: "Share night report" });
-    return `Report ready with ${files.length - 1} clip${files.length === 2 ? "" : "s"}.`;
-  }
-
-  const shareFiles = files.map((f) => new File([f.blob], f.name, { type: f.type }));
-  if (navigator.canShare && navigator.canShare({ files: shareFiles })) {
-    try {
-      await navigator.share({ title: "Sonora night report", files: shareFiles });
-      return `Report shared with ${files.length - 1} clip${files.length === 2 ? "" : "s"}.`;
-    } catch (err) {
-      if (err.name === "AbortError") return "Sharing cancelled.";
-    }
-  }
-  for (const f of files) {
-    const url = URL.createObjectURL(f.blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = f.name;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 2000);
-  }
-  return files.length > 1
-    ? `Downloaded the report and ${files.length - 1} clip${files.length === 2 ? "" : "s"}.`
-    : "Downloaded the report.";
+  const n = files.length - 1;
+  const clipsText = `${n} clip${n === 1 ? "" : "s"}`;
+  const how = await shareFiles(files, "Sonora night report");
+  if (how === "cancelled") return "Sharing cancelled.";
+  if (how === "shared") return `Report shared with ${clipsText}.`;
+  return n ? `Downloaded the report and ${clipsText}.` : "Downloaded the report.";
 }

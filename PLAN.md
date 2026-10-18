@@ -188,6 +188,9 @@ Sonora builds all of them in, kept on-device:
 - [x] **P4 Night report (PDF) to share with a doctor**, sent with the loudest clips (share sheet in the app; download in a browser).
 - [x] **P5 Sound labels** for other noises (talking, coughing, …) on iOS
       via Apple's built-in sound classifier.
-- [ ] **P6 Backup & restore** to a file you keep (iCloud Drive / Google
+- [x] **P6 Backup & restore** to a file you keep (iCloud Drive / Google
       Drive / anywhere) — the privacy-preserving alternative to a cloud
-      account.
+      account. Same format on every platform, so backups move between them.
+
+Not copied: SnoreLab's "BreathFlow" breathing analysis (proprietary) and
+Apple Health / Watch sync (possible later via a HealthKit plugin).

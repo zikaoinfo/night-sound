@@ -8,7 +8,9 @@
 import { RingRecorder, encodeWav } from "./recorder.js";
 import { SnoreAnalyzer, CFG, computeReport } from "./analyzer.js";
 import { getNativeRecorder, platform, clipUrl } from "./native.js";
-import { listNights, loadNight, deleteNight, saveWebNight, updateNightMeta, normMeta } from "./history.js";
+import { listNights, loadNight, deleteNight, saveWebNight, updateNightMeta, normMeta,
+         exportBackup, importBackup } from "./history.js";
+import { shareFiles } from "./share.js";
 import { FACTORS, REMEDIES, customId, labelOf, isRemedy, tagImpact } from "./tags.js";
 import { shareReport } from "./report.js";
 
@@ -847,6 +849,37 @@ $("btnStart").addEventListener("click", start);
 $("btnStop").addEventListener("click", stop);
 $("btnExport").addEventListener("click", exportJson);
 $("btnReport").addEventListener("click", shareNightReport);
+
+$("btnBackup").addEventListener("click", async () => {
+  const status = $("backupStatus");
+  try {
+    const backup = await exportBackup();
+    if (!backup.nights.length) { status.textContent = "No finished nights to back up yet."; return; }
+    const blob = new Blob([JSON.stringify(backup)], { type: "application/json" });
+    const name = `sonora-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    const how = await shareFiles([{ name, blob, type: "application/json" }], "Sonora backup");
+    const n = backup.nights.length;
+    status.textContent = how === "cancelled" ? "Backup cancelled."
+      : `${how === "shared" ? "Backed up" : "Downloaded a backup of"} ${n} night${n === 1 ? "" : "s"} (${name}).`;
+  } catch (err) {
+    status.textContent = "Couldn't back up: " + (err.message || err);
+  }
+});
+
+$("restoreFile").addEventListener("change", async () => {
+  const file = $("restoreFile").files[0];
+  $("restoreFile").value = "";
+  if (!file) return;
+  const status = $("backupStatus");
+  try {
+    const { added, skipped } = await importBackup(JSON.parse(await file.text()));
+    status.textContent = `Restored ${added} night${added === 1 ? "" : "s"}` +
+      (skipped ? `; ${skipped} already here or unreadable.` : ".");
+    await refreshHistory();
+  } catch (err) {
+    status.textContent = err instanceof SyntaxError ? "That file isn't a Sonora backup." : (err.message || String(err));
+  }
+});
 $("btnBack").addEventListener("click", backToTonight);
 $("btnDelete").addEventListener("click", () => { $("confirmDelete").hidden = false; });
 $("btnDeleteCancel").addEventListener("click", () => { $("confirmDelete").hidden = true; });

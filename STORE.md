@@ -100,8 +100,15 @@ notification, unlock, stop. A screen recording is enough.
 >
 > • Snore Score from 0 to 100, plus time snoring and how loud it got
 > • A timeline of the night with every snoring episode
-> • Listen back to the loudest snores and any other loud sounds
-> • History: see how your nights compare over time
+> • Record the whole night and tap the timeline to listen to any moment
+> • Listen back to the loudest snores and other sounds — named for you
+>   (talking, coughing, a dog barking) on iPhone
+> • Factors & remedies: tag alcohol, a late meal, a nasal strip, a mouth
+>   guard… and see which ones change your snoring
+> • Rate how rested you feel and keep notes for each night
+> • Share a one-page PDF report with your doctor, with the audio clips
+> • Start delay, so noises while you fall asleep don't count
+> • History and trends, plus backup and restore to a file you keep
 > • Adjustable sensitivity for quiet or noisy rooms
 >
 > Private by design. All listening and analysis happen on your phone. No

@@ -152,3 +152,70 @@ export async function saveWebNight(snap, startedAt, meta, fullBlob) {
   }
   return id;
 }
+
+// ---------------------------------------------------------------- backup & restore
+// A backup is one JSON file with every night's data (events, loudness curve,
+// summary, notes). Audio isn't included: clips and full recordings stay on
+// the device they were recorded on. The format is the same everywhere, so a
+// backup from the browser restores on a phone and vice versa.
+
+const EVENT_DEFAULTS = { peakDbfs: -120, centroid: 0, lowRatio: 0, flatness: 1, f0: 0, harmonicity: 0,
+                         snoreProb: 0, isSnore: false, intensity: "quiet" };
+
+function canonicalNight(n) {
+  const events = (n.events || []).map((e) => {
+    const { clip, inEpisode, confirmedSnore, ...rest } = e;
+    const out = { ...EVENT_DEFAULTS, ...rest };
+    out.durationS = out.durationS ?? out.endS - out.startS;
+    return out;
+  });
+  const envelope = (n.envelope || []).map((v) => (typeof v === "number" ? v : v.db));
+  const durationS = n.durationS || 0;
+  const r = computeReport({ events: events.map((e) => ({ ...e })), durationS, noiseFloorDbfs: n.noiseFloorDbfs ?? -50 });
+  return {
+    id: n.id, startedAt: n.startedAt, endedAt: n.endedAt ?? null, durationS,
+    noiseFloorDbfs: n.noiseFloorDbfs ?? -50, sensitivity: n.sensitivity || "normal",
+    fullRecording: null, startDelayS: n.startDelayS || 0, envelope, events,
+    summary: { ...summaryOf(r), snoresPerHour: r.snoresPerHour },
+    meta: normMeta(n.meta),
+  };
+}
+
+export async function exportBackup() {
+  const native = await getNativeRecorder();
+  let nights;
+  if (native) {
+    const { sessions } = await native.plugin.listSessions();
+    nights = [];
+    for (const s of sessions) nights.push(await native.plugin.getSession({ id: s.id }));
+  } else {
+    nights = await withStore("readonly", (s) => s.getAll());
+  }
+  return {
+    app: "sonora", format: 1, exportedAt: new Date().toISOString(),
+    nights: nights.filter((n) => n.endedAt).map(canonicalNight),
+  };
+}
+
+// Returns { added, skipped } — nights already on this device are skipped.
+export async function importBackup(backup) {
+  if (!backup || backup.app !== "sonora" || !Array.isArray(backup.nights)) {
+    throw new Error("That file isn't a Sonora backup.");
+  }
+  const native = await getNativeRecorder();
+  let added = 0, skipped = 0;
+  for (const raw of backup.nights) {
+    if (!/^\d{8}-\d{6}$/.test(raw.id || "")) { skipped++; continue; }
+    const n = canonicalNight(raw);
+    if (native) {
+      const { result } = await native.plugin.importSession({ json: JSON.stringify(n) });
+      result === "added" ? added++ : skipped++;
+    } else {
+      const exists = await withStore("readonly", (s) => s.get(n.id));
+      if (exists) { skipped++; continue; }
+      await withStore("readwrite", (s) => s.put(n));
+      added++;
+    }
+  }
+  return { added, skipped };
+}

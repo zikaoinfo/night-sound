@@ -152,6 +152,55 @@ async function newPage(initScript) {
   await page.context().close();
 }
 
+// ------------------------------------------------------------ backup & restore
+{
+  console.log("backup & restore (web)");
+  const { page, errors } = await newPage();
+  await page.goto(URL);
+  await page.evaluate(async () => {
+    const { saveWebNight } = await import("./history.js");
+    for (const day of [5, 6]) {
+      const events = [{ startS: 10, endS: 11.2, durationS: 1.2, peakDbfs: -20, centroid: 400, lowRatio: .9,
+        flatness: .2, f0: 110, harmonicity: .6, snoreProb: .8, isSnore: true, intensity: "loud" }];
+      await saveWebNight({ events, envelope: [{ t: 1, db: -50 }], durationS: 600, noiseFloorDbfs: -55 },
+                        new Date(2026, 9, day, 23), { tags: ["alcohol"], rating: 3, note: "n" });
+    }
+  });
+  await page.click("#tabHistory");
+  await page.waitForTimeout(300);
+  const dl = page.waitForEvent("download", { timeout: 15000 });
+  await page.click("#btnBackup");
+  const file = await dl;
+  const fs = await import("node:fs");
+  const backupPath = await file.path();
+  const backup = JSON.parse(fs.readFileSync(backupPath, "utf8"));
+  const n0 = backup.nights[0] || {};
+  const keys = ["id", "startedAt", "endedAt", "durationS", "noiseFloorDbfs", "sensitivity", "envelope", "events", "summary", "meta"];
+  check(backup.app === "sonora" && backup.nights.length === 2, `backup has both nights (${backup.nights.length})`);
+  check(keys.every((k) => k in n0) && "snoresPerHour" in n0.summary && typeof n0.envelope[0] === "number",
+        "nights use the shared format the phone apps read");
+  await page.waitForTimeout(300);
+  check(/Downloaded a backup of 2 nights/.test(await text(page, "backupStatus")), "says what was backed up");
+
+  // Lose one night, then restore.
+  await page.evaluate(async () => { const { deleteNight } = await import("./history.js"); await deleteNight("20261005-230000"); });
+  await page.reload();
+  await page.click("#tabHistory");
+  await page.waitForTimeout(300);
+  check((await page.$$("#nightList .night")).length === 1, "one night left before restoring");
+  await page.setInputFiles("#restoreFile", backupPath);
+  await page.waitForTimeout(800);
+  check(/Restored 1 night; 1 already here/.test(await text(page, "backupStatus")), "restore adds the missing night only");
+  check((await page.$$("#nightList .night")).length === 2, "both nights listed after restore");
+  const line = await page.$$eval("#nightList .night-tags", (els) => els.map((e) => e.textContent).join("|"));
+  check(/rested 3\/5/.test(line) && /Alcohol/.test(line), "restored night keeps its notes");
+  await page.setInputFiles("#restoreFile", { name: "x.json", mimeType: "application/json", buffer: Buffer.from("{nope") });
+  await page.waitForTimeout(300);
+  check(/isn't a Sonora backup/.test(await text(page, "backupStatus")), "rejects a file that isn't a backup");
+  check(errors.length === 0, "no page errors" + (errors.length ? ": " + errors.join(" | ") : ""));
+  await page.context().close();
+}
+
 // ------------------------------------------------------------ start delay
 {
   console.log("start delay (web)");

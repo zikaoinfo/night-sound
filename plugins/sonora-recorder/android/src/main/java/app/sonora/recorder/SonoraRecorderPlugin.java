@@ -157,6 +157,20 @@ public class SonoraRecorderPlugin extends Plugin {
         else call.reject("Session not found.", "NOT_FOUND");
     }
 
+    /** importSession({ json }) -> { result: "added" | "exists" } */
+    @PluginMethod
+    public void importSession(PluginCall call) {
+        String json = call.getString("json");
+        String result = json == null ? null : SessionStore.importSession(getContext(), json);
+        if (result == null) {
+            call.reject("That doesn't look like a Sonora night.", "INVALID");
+            return;
+        }
+        JSObject o = new JSObject();
+        o.put("result", result);
+        call.resolve(o);
+    }
+
     private static String[] stringArray(JSArray a) {
         if (a == null) return new String[0];
         String[] out = new String[a.length()];

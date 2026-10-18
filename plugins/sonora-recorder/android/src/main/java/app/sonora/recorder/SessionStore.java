@@ -193,6 +193,27 @@ final class SessionStore {
         return out;
     }
 
+    /** Restore a night from a backup. Returns "added", "exists" or null if invalid. */
+    static String importSession(Context context, String json) {
+        try {
+            JSONObject s = new JSONObject(json);
+            String id = s.getString("id");
+            if (!id.matches("\\d{8}-\\d{6}") || !s.has("events") || !s.has("startedAt")) return null;
+            File dir = new File(root(context), id);
+            if (dir.exists()) return "exists";
+            JSONArray evs = s.getJSONArray("events");
+            for (int i = 0; i < evs.length(); i++) evs.getJSONObject(i).remove("clip");
+            s.put("fullRecording", JSONObject.NULL);
+            if (!dir.mkdirs()) return null;
+            try (FileOutputStream out = new FileOutputStream(new File(dir, "session.json"))) {
+                out.write(s.toString().getBytes(StandardCharsets.UTF_8));
+            }
+            return "added";
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     static boolean delete(Context context, String id) {
         return deleteTree(new File(root(context), id));
     }

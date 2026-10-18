@@ -24,6 +24,7 @@ public class SonoraRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getSession", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "deleteSession", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "updateSession", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "importSession", returnType: CAPPluginReturnPromise),
     ]
 
     private let recorder = NightRecorder()
@@ -120,6 +121,19 @@ public class SonoraRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
             call.resolve()
         } else {
             call.reject("Session not found.", "NOT_FOUND")
+        }
+    }
+
+    /// importSession({ json }) -> { result: "added" | "exists" }
+    @objc func importSession(_ call: CAPPluginCall) {
+        guard let json = call.getString("json")?.data(using: .utf8) else {
+            call.reject("Missing json.", "BAD_REQUEST")
+            return
+        }
+        switch NightRecorder.importSession(json: json) {
+        case .added: call.resolve(["result": "added"])
+        case .exists: call.resolve(["result": "exists"])
+        case .invalid: call.reject("That doesn't look like a Sonora night.", "INVALID")
         }
     }
 

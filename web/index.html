@@ -159,6 +159,15 @@
         <ul id="impactList" class="impact-list"><li class="empty">Tag a few nights with factors and remedies to see what makes a difference.</li></ul>
         <p class="hint">Average Snore Score on nights with each tag compared with nights without it. Needs at least 2 nights each way; more nights give a fairer picture.</p>
       </section>
+      <section class="backup" aria-labelledby="backupTitle">
+        <h2 id="backupTitle">Backup</h2>
+        <div class="controls">
+          <button id="btnBackup" class="btn">Back up all nights</button>
+          <label class="btn ghost file-btn" for="restoreFile">Restore from a backup</label>
+          <input type="file" id="restoreFile" accept="application/json,.json" class="sr-only" />
+        </div>
+        <p class="hint" id="backupStatus" aria-live="polite">Saves one file you keep wherever you like (iCloud Drive, Google Drive, a computer). It has every night's results and notes; audio isn't included.</p>
+      </section>
       <h2>Nights</h2>
       <ul id="nightList" class="night-list"><li class="empty">No nights saved yet. Record one from the Tonight tab.</li></ul>
     </section>
