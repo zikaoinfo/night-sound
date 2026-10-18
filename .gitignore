@@ -11,3 +11,12 @@ out/
 *.wav
 *.opus
 *.flac
+
+# node / capacitor
+node_modules/
+package-lock.json
+# native projects are generated on your Mac with `npx cap add ios/android`;
+# commit them later if you want them under version control.
+/ios/
+/android/
+.DS_Store

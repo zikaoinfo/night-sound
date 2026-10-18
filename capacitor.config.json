@@ -1,0 +1,12 @@
+{
+  "appId": "com.zikao.nightsound",
+  "appName": "Night Sound",
+  "webDir": "web",
+  "ios": {
+    "contentInset": "always",
+    "limitsNavigationsToAppBoundDomains": false
+  },
+  "server": {
+    "iosScheme": "https"
+  }
+}
