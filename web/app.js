@@ -10,6 +10,7 @@ import { SnoreAnalyzer, CFG, computeReport } from "./analyzer.js";
 import { getNativeRecorder, platform, clipUrl } from "./native.js";
 import { listNights, loadNight, deleteNight, saveWebNight, updateNightMeta, normMeta } from "./history.js";
 import { FACTORS, REMEDIES, customId, labelOf, isRemedy, tagImpact } from "./tags.js";
+import { shareReport } from "./report.js";
 
 const $ = (id) => document.getElementById(id);
 const COLORS = {
@@ -179,6 +180,7 @@ class NativeSource {
     this.noiseFloor = session.noiseFloorDbfs;
     this.baseUrl = session.baseUrl;
     this.meta = normMeta(session.meta);
+    this.startedAt = session.startedAt ? new Date(session.startedAt) : this.startedAt;
     this.fullRecording = session.endedAt ? session.fullRecording : null;
   }
 
@@ -347,7 +349,26 @@ function render() {
     $("scoreSub").textContent = summaryText(r);
   }
   setFullPlayer(cur.fullSrc);
+  $("btnReport").hidden = running && !stored;
   drawTimeline(cur.snap, r);
+}
+
+async function shareNightReport() {
+  const cur = current();
+  if (!cur) return;
+  const night = stored
+    ? { snap: cur.snap, startedAt: stored.startedAt, meta: stored.meta }
+    : { snap: cur.snap, startedAt: source.startedAt || new Date(), meta: source.meta };
+  const btn = $("btnReport");
+  btn.disabled = true;
+  $("note").textContent = "Preparing the report…";
+  try {
+    $("note").textContent = await shareReport(night, cur.clipSrc);
+  } catch (err) {
+    $("note").textContent = "Couldn't make the report: " + (err.message || err);
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // ---------------------------------------------------------------- full-night playback
@@ -550,6 +571,7 @@ function backToTonight() {
     $("scoreSub").textContent = "Press start to begin listening";
     $("intensity").hidden = true;
     $("btnExport").hidden = true;
+    $("btnReport").hidden = true;
     $("statTime").textContent = "0:00";
     $("statPct").textContent = "0%";
     $("statEvents").textContent = "0";
@@ -820,6 +842,7 @@ $("fullAudio").addEventListener("timeupdate", () => { if (current()) render(); }
 $("btnStart").addEventListener("click", start);
 $("btnStop").addEventListener("click", stop);
 $("btnExport").addEventListener("click", exportJson);
+$("btnReport").addEventListener("click", shareNightReport);
 $("btnBack").addEventListener("click", backToTonight);
 $("btnDelete").addEventListener("click", () => { $("confirmDelete").hidden = false; });
 $("btnDeleteCancel").addEventListener("click", () => { $("confirmDelete").hidden = true; });

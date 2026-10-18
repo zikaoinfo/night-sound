@@ -49,7 +49,7 @@ const check = (cond, msg) => {
 const text = (page, id) => page.$eval("#" + id, (el) => el.textContent);
 
 async function newPage(initScript) {
-  const ctx = await browser.newContext({ permissions: ["microphone"] });
+  const ctx = await browser.newContext({ permissions: ["microphone"], acceptDownloads: true });
   const page = await ctx.newPage();
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
@@ -133,6 +133,21 @@ async function newPage(initScript) {
   await page.reload();
   await page.waitForTimeout(300);
   check(await page.isChecked("#sensHigh"), "sensitivity setting survives a reload");
+  // Doctor report: in a browser without file sharing, the PDF + clips download.
+  await page.click("#tabHistory");
+  await page.waitForTimeout(300);
+  await page.click("#nightList .night");
+  await page.waitForTimeout(300);
+  check(!(await page.$eval("#btnReport", (b) => b.hidden)), "share report offered for a saved night");
+  const dl = page.waitForEvent("download", { timeout: 15000 });
+  await page.click("#btnReport");
+  const file = await dl;
+  const path = await file.path();
+  const head = (await import("node:fs")).readFileSync(path).subarray(0, 5).toString();
+  check(file.suggestedFilename().startsWith("sonora-report-") && head === "%PDF-",
+        `report is a PDF (${file.suggestedFilename()})`);
+  await page.waitForTimeout(500);
+  check(/Downloaded the report/.test(await text(page, "note")), "tells you what it did");
   check(errors.length === 0, "no page errors" + (errors.length ? ": " + errors.join(" | ") : ""));
   await page.context().close();
 }

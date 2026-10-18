@@ -185,7 +185,7 @@ Sonora builds all of them in, kept on-device:
 - [x] **P2 Start delay** (off / 15 / 30 / 45 / 60 min) on iOS, Android and web.
 - [x] **P3 Full-night recording + playback** on iOS, Android and web; tap
       the timeline to listen from that moment.
-- [ ] **P4 Night report (PDF) to share with a doctor**, with the clips.
+- [x] **P4 Night report (PDF) to share with a doctor**, sent with the loudest clips (share sheet in the app; download in a browser).
 - [ ] **P5 Sound labels** for other noises (talking, coughing, …) on iOS
       via Apple's built-in sound classifier.
 - [ ] **P6 Backup & restore** to a file you keep (iCloud Drive / Google
