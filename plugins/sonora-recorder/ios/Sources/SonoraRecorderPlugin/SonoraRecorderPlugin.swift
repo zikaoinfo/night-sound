@@ -23,6 +23,7 @@ public class SonoraRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "listSessions", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getSession", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "deleteSession", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "updateSession", returnType: CAPPluginReturnPromise),
     ]
 
     private let recorder = NightRecorder()
@@ -40,7 +41,8 @@ public class SonoraRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         let opts = RecorderOptions(
             sensitivity: call.getString("sensitivity", "normal"),
             fullRecording: call.getBool("fullRecording", false),
-            keepClips: call.getBool("keepClips", true))
+            keepClips: call.getBool("keepClips", true),
+            tags: call.getArray("tags", String.self) ?? [])
         Self.requestMicrophone { granted in
             guard granted else {
                 call.reject("Microphone access is off. Turn it on in Settings > Sonora.", "PERMISSION_DENIED")
@@ -78,6 +80,7 @@ public class SonoraRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
             o["endedAt"] = rec.endedAt ?? NSNull()
             o["durationS"] = rec.durationS
             o["eventCount"] = rec.events.count
+            if let meta = rec.meta { o["meta"] = Self.object(meta) }
             return o
         }
         call.resolve(["sessions": sessions])
@@ -101,6 +104,21 @@ public class SonoraRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
             call.resolve()
         } catch {
             call.reject("Could not delete session.", "DELETE_FAILED", error)
+        }
+    }
+
+    /// updateSession({ id, tags, rating?, note? })
+    @objc func updateSession(_ call: CAPPluginCall) {
+        guard let id = call.getString("id") else {
+            call.reject("Missing id.", "BAD_REQUEST")
+            return
+        }
+        let meta = NightMeta(tags: call.getArray("tags", String.self) ?? [],
+                             rating: call.getInt("rating"), note: call.getString("note"))
+        if recorder.updateMeta(id: id, meta: meta) {
+            call.resolve()
+        } else {
+            call.reject("Session not found.", "NOT_FOUND")
         }
     }
 

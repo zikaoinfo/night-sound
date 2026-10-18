@@ -65,6 +65,12 @@ async function newPage(initScript) {
   console.log("web mode (fake microphone)");
   const { page, errors } = await newPage();
   await page.goto(URL);
+  await page.click('#factorChips .chip:has-text("Alcohol")');
+  await page.click('#remedyChips .chip:has-text("Nasal strip")');
+  await page.fill("#customTag", "Wine");
+  await page.click("#customTagForm button");
+  check(await page.$eval('#factorChips .chip:has-text("Wine")', (b) => b.getAttribute("aria-pressed")) === "true",
+        "custom factor added and selected");
   await page.click("#btnStart");
   await page.waitForTimeout(4000);
   check((await text(page, "liveState")) === "listening", "listening after start");
@@ -73,20 +79,53 @@ async function newPage(initScript) {
   await page.waitForTimeout(500);
   check((await text(page, "liveState")) === "stopped", "stopped after stop");
   check(/snor/i.test(await text(page, "scoreSub")), "morning summary sentence shown");
+  check(!(await page.$eval("#morningBlock", (el) => el.hidden)), "rating and note offered after the night");
+  await page.click('label:has(#rate4)');
+  await page.fill("#nightNote", "Woke up twice");
+  await page.waitForTimeout(700);
 
   await page.click("#tabHistory");
   await page.waitForTimeout(300);
   const nights = await page.$$("#nightList .night");
   check(nights.length === 1, `history lists the night (${nights.length})`);
+  const line = await page.$eval("#nightList .night-tags", (el) => el.textContent).catch(() => "");
+  check(/rested 4\/5/.test(line) && /Alcohol/.test(line) && /Nasal strip/.test(line) && /Wine/.test(line),
+        `night shows rating and tags ("${line}")`);
   await nights[0].click();
   await page.waitForTimeout(300);
   check(!(await page.$eval("#viewingBar", (el) => el.hidden)), "opening a night shows it on Tonight");
   check(/Night of/.test(await text(page, "viewingLabel")), "night is labelled with its date");
+  check((await page.inputValue("#nightNote")) === "Woke up twice", "note is kept with the night");
+  check(await page.$eval('#remedyChips .chip:has-text("Nasal strip")', (b) => b.getAttribute("aria-pressed")) === "true",
+        "the night's remedies are shown");
+  check(await page.$eval('#remedyChips .chip:has-text("Nasal strip")', (b) => b.getAttribute("aria-pressed")) === "true"
+        && await page.$eval('#factorChips .chip:has-text("Alcohol")', (b) => b.getAttribute("aria-pressed")) === "true",
+        "the night's factors are shown");
   await page.click("#btnDelete");
   check(!(await page.$eval("#confirmDelete", (el) => el.hidden)), "delete asks for confirmation");
   await page.click("#btnDeleteConfirm");
   await page.waitForTimeout(300);
   check((await page.$$("#nightList .night")).length === 0, "deleted night is gone from history");
+
+  // Seed 4 nights: nasal strip on the two quieter ones.
+  await page.evaluate(async () => {
+    const { saveWebNight } = await import("./history.js");
+    const night = async (day, pct, tags) => {
+      const dur = 3600, events = [];
+      for (let t = 10; t < dur * pct / 100 * 2; t += 2.5)
+        events.push({ startS: t, endS: t + 1.2, durationS: 1.2, peakDbfs: -20, centroid: 400, lowRatio: .9,
+          flatness: .2, f0: 110, harmonicity: .6, snoreProb: .8, isSnore: true, intensity: "loud" });
+      await saveWebNight({ events, envelope: [], durationS: dur, noiseFloorDbfs: -55 }, new Date(2026, 9, day, 23), { tags });
+    };
+    await night(1, 30, ["alcohol"]); await night(2, 28, ["alcohol"]);
+    await night(3, 5, ["nasalStrip"]); await night(4, 6, ["nasalStrip"]);
+  });
+  await page.click("#tabTonight");
+  await page.click("#tabHistory");
+  await page.waitForTimeout(400);
+  const impact = await page.$$eval("#impactList .impact-item", (els) => els.map((e) => e.textContent));
+  check(impact.some((t) => /Nasal strip/.test(t) && /−/.test(t)), "impact list: nasal strip goes with less snoring");
+  check(impact.some((t) => /Alcohol/.test(t) && /\+/.test(t)), "impact list: alcohol goes with more snoring");
 
   await page.click("#tabTonight");
   await page.click("#settings summary");
@@ -101,7 +140,7 @@ async function newPage(initScript) {
 // ------------------------------------------------------------ native mode
 // Mock of what the iOS shell injects before the page loads.
 const nativeMock = () => {
-  const methods = ["start", "stop", "status", "listSessions", "getSession", "deleteSession",
+  const methods = ["start", "stop", "status", "listSessions", "getSession", "deleteSession", "updateSession",
                    "removeListener"].map((name) => ({ name, rtype: "promise" }));
   methods.push({ name: "addListener", rtype: "callback" });
   window.webkit = { messageHandlers: { bridge: { postMessage() {} } } };
@@ -128,11 +167,11 @@ const nativeMock = () => {
   const session = () => ({ id: "20261018-230000", startedAt: "2026-10-18T23:00:00Z",
     endedAt: state.recording ? null : "2026-10-19T06:30:00Z", durationS: state.t, noiseFloorDbfs: -55,
     envelope: Array.from({ length: Math.floor(state.t) }, () => -45), events: state.events,
-    baseUrl: "file:///docs/Sonora/sessions/20261018-230000/" });
+    baseUrl: "file:///docs/Sonora/sessions/20261018-230000/", meta: state.meta });
   if (state.recording) timer = setInterval(tick, 50);
 
   const plugin = {
-    start: async () => { Object.assign(state, { recording: true, t: 0, events: [] });
+    start: async (o) => { Object.assign(state, { recording: true, t: 0, events: [], meta: { tags: o.tags || [] } });
                          persist(); timer = setInterval(tick, 50); return { sessionId: "20261018-230000" }; },
     stop: async () => { clearInterval(timer); state.recording = false;
                         state.saved = [session()]; persist(); return session(); },
@@ -142,7 +181,10 @@ const nativeMock = () => {
     getSession: async ({ id }) => state.recording ? session() : state.saved.find((x) => x.id === id),
     listSessions: async () => ({ sessions: state.saved.map((x) => ({
       id: x.id, startedAt: x.startedAt, endedAt: x.endedAt, durationS: x.durationS, eventCount: x.events.length,
-      snoreScore: 42, snorePercent: 12, snoreTimeS: 10, snoreEvents: x.events.length, episodes: 1, weirdSounds: 0 })) }),
+      snoreScore: 42, snorePercent: 12, snoreTimeS: 10, snoreEvents: x.events.length, episodes: 1, weirdSounds: 0,
+      meta: x.meta })) }),
+    updateSession: async ({ id, ...meta }) => { state.meta = meta;
+      state.saved.forEach((x) => { if (x.id === id) x.meta = meta; }); persist(); return {}; },
     deleteSession: async ({ id }) => { state.saved = state.saved.filter((x) => x.id !== id); persist(); return {}; },
     removeListener: async () => ({}),
     addListener: (opts, cb) => { (listeners[opts.eventName] ||= []).push(cb); return String(nextId++); },
@@ -196,6 +238,11 @@ const nativeMock = () => {
   check(!!(await page.$("#eventList .ev-play")), "a saved night's clips are playable");
   const clipSrcOk = await page.evaluate(() => typeof window.Capacitor.convertFileSrc === "function");
   check(clipSrcOk, "clip URLs go through convertFileSrc");
+  await page.click('#factorChips .chip:has-text("Late meal")');
+  await page.click('label:has(#rate2)');
+  await page.waitForTimeout(700);
+  const meta = await page.evaluate(() => JSON.parse(sessionStorage.getItem("mock")).meta);
+  check(meta && meta.rating === 2 && meta.tags.includes("lateMeal"), "native: tags and rating saved via updateSession");
   check(errors.length === 0, "no page errors" + (errors.length ? ": " + errors.join(" | ") : ""));
   await page.context().close();
 }

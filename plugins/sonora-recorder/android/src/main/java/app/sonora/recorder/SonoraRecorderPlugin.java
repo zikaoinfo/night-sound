@@ -3,6 +3,7 @@ package app.sonora.recorder;
 import android.Manifest;
 import android.content.Intent;
 import androidx.core.content.ContextCompat;
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
@@ -71,7 +72,8 @@ public class SonoraRecorderPlugin extends Plugin {
         Intent intent = new Intent(getContext(), RecorderService.class)
             .putExtra("sessionId", id)
             .putExtra("sensitivity", call.getString("sensitivity", "normal"))
-            .putExtra("keepClips", call.getBoolean("keepClips", true));
+            .putExtra("keepClips", call.getBoolean("keepClips", true))
+            .putExtra("tags", stringArray(call.getArray("tags")));
         ContextCompat.startForegroundService(getContext(), intent);
         JSObject result = new JSObject();
         result.put("sessionId", id);
@@ -126,6 +128,30 @@ public class SonoraRecorderPlugin extends Plugin {
         } catch (Exception e) {
             call.reject("Session not found.", "NOT_FOUND");
         }
+    }
+
+    /** updateSession({ id, tags, rating?, note? }) */
+    @PluginMethod
+    public void updateSession(PluginCall call) {
+        String id = call.getString("id");
+        if (id == null) {
+            call.reject("Missing id.", "BAD_REQUEST");
+            return;
+        }
+        JSONObject meta = SessionStore.metaJSON(stringArray(call.getArray("tags")),
+                call.getInt("rating"), call.getString("note"));
+        RecorderService service = RecorderService.current();
+        boolean ok = (service != null && service.updateMeta(id, meta))
+                || SessionStore.updateMeta(getContext(), id, meta);
+        if (ok) call.resolve();
+        else call.reject("Session not found.", "NOT_FOUND");
+    }
+
+    private static String[] stringArray(JSArray a) {
+        if (a == null) return new String[0];
+        String[] out = new String[a.length()];
+        for (int i = 0; i < a.length(); i++) out[i] = a.optString(i);
+        return out;
     }
 
     @PluginMethod

@@ -28,12 +28,14 @@ final class SessionStore {
     final String startedAt;
     final String sensitivity;
     private final boolean keepClips;
+    private JSONObject meta;
     private final List<SnoreEngine.Event> events = new ArrayList<>();
     private final List<Integer> snoreClipIndexes = new ArrayList<>();
     private int clipCounter = 0;
 
-    SessionStore(Context context, String id, String sensitivity, boolean keepClips) {
+    SessionStore(Context context, String id, String sensitivity, boolean keepClips, String[] tags) {
         this.id = id;
+        this.meta = metaJSON(tags, null, null);
         this.dir = new File(root(context), id);
         this.startedAt = iso(new Date());
         this.sensitivity = sensitivity;
@@ -56,6 +58,21 @@ final class SessionStore {
     }
 
     synchronized int eventCount() { return events.size(); }
+
+    /** Takes effect on the next save (within 30 s, and at stop). */
+    synchronized void setMeta(JSONObject meta) { this.meta = meta; }
+
+    static JSONObject metaJSON(String[] tags, Integer rating, String note) {
+        JSONObject o = new JSONObject();
+        try {
+            JSONArray t = new JSONArray();
+            if (tags != null) for (String tag : tags) t.put(tag);
+            o.put("tags", t);
+            if (rating != null) o.put("rating", rating);
+            if (note != null) o.put("note", note);
+        } catch (JSONException ignored) { }
+        return o;
+    }
 
     /** Store an event; keeps clips for notable sounds and the loudest snores. Returns its JSON. */
     synchronized JSONObject add(SnoreEngine.Event ev, float[] clip) throws JSONException {
@@ -106,6 +123,7 @@ final class SessionStore {
         for (SnoreEngine.Event e : events) evs.put(eventJSON(e));
         o.put("events", evs);
         o.put("summary", summaryJSON(SnoreEngine.summarize(events, durationS)));
+        o.put("meta", meta);
 
         File tmp = new File(dir, "session.json.tmp");
         try (FileOutputStream out = new FileOutputStream(tmp)) {
@@ -130,6 +148,22 @@ final class SessionStore {
         return new JSONObject(new String(data, StandardCharsets.UTF_8));
     }
 
+    /** Rewrite a finished night's notes on disk. */
+    static boolean updateMeta(Context context, String id, JSONObject meta) {
+        try {
+            JSONObject s = load(context, id);
+            s.put("meta", meta);
+            File dir = new File(root(context), id);
+            File tmp = new File(dir, "session.json.tmp");
+            try (FileOutputStream out = new FileOutputStream(tmp)) {
+                out.write(s.toString().getBytes(StandardCharsets.UTF_8));
+            }
+            return tmp.renameTo(new File(dir, "session.json"));
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     static JSONArray list(Context context) {
         JSONArray out = new JSONArray();
         String[] ids = root(context).list();
@@ -144,6 +178,7 @@ final class SessionStore {
                 o.put("endedAt", s.opt("endedAt"));
                 o.put("durationS", s.getDouble("durationS"));
                 o.put("eventCount", s.getJSONArray("events").length());
+                if (s.has("meta")) o.put("meta", s.get("meta"));
                 out.put(o);
             } catch (Exception ignored) {
                 // Skip unreadable folders rather than failing the whole list.

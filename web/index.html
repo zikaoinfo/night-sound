@@ -82,6 +82,39 @@
         <button id="btnExport" class="btn ghost" hidden>Export JSON</button>
       </div>
 
+      <section class="nightcard" id="nightCard" aria-labelledby="nightCardTitle">
+        <h2 id="nightCardTitle">Tonight's factors &amp; remedies</h2>
+        <div class="chip-group">
+          <h3 id="factorsLabel">Factors</h3>
+          <div class="chips" id="factorChips" role="group" aria-labelledby="factorsLabel"></div>
+        </div>
+        <div class="chip-group">
+          <h3 id="remediesLabel">Remedies</h3>
+          <div class="chips" id="remedyChips" role="group" aria-labelledby="remediesLabel"></div>
+        </div>
+        <form class="custom-tag" id="customTagForm">
+          <label for="customTag" class="sr-only">Add your own factor or remedy</label>
+          <input id="customTag" placeholder="Add your own…" maxlength="30" autocomplete="off" />
+          <button class="btn small" type="submit">Add</button>
+        </form>
+        <div id="morningBlock" hidden>
+          <fieldset class="rating" id="rating">
+            <legend>How rested do you feel?</legend>
+            <div class="rating-row">
+              <label><input type="radio" name="rating" value="1" id="rate1" /><span>1</span></label>
+              <label><input type="radio" name="rating" value="2" id="rate2" /><span>2</span></label>
+              <label><input type="radio" name="rating" value="3" id="rate3" /><span>3</span></label>
+              <label><input type="radio" name="rating" value="4" id="rate4" /><span>4</span></label>
+              <label><input type="radio" name="rating" value="5" id="rate5" /><span>5</span></label>
+            </div>
+            <div class="rating-ends"><span>exhausted</span><span>fully rested</span></div>
+          </fieldset>
+          <label for="nightNote" class="note-label">Note</label>
+          <textarea id="nightNote" rows="2" maxlength="500" placeholder="Anything else about this night"></textarea>
+        </div>
+        <p class="hint" id="metaStatus" aria-live="polite"></p>
+      </section>
+
       <details class="settings" id="settings">
         <summary>Settings</summary>
         <fieldset id="sensitivity">
@@ -106,6 +139,12 @@
     <section id="viewHistory" role="tabpanel" aria-labelledby="tabHistory" class="view" hidden>
       <h2>Snore Score by night</h2>
       <canvas id="trend" class="trend" width="800" height="180" role="img" aria-label="Snore Score for recent nights"></canvas>
+      <section class="impact" aria-labelledby="impactTitle">
+        <h2 id="impactTitle">What affects your snoring</h2>
+        <ul id="impactList" class="impact-list"><li class="empty">Tag a few nights with factors and remedies to see what makes a difference.</li></ul>
+        <p class="hint">Average Snore Score on nights with each tag compared with nights without it. Needs at least 2 nights each way; more nights give a fairer picture.</p>
+      </section>
+      <h2>Nights</h2>
       <ul id="nightList" class="night-list"><li class="empty">No nights saved yet. Record one from the Tonight tab.</li></ul>
     </section>
 

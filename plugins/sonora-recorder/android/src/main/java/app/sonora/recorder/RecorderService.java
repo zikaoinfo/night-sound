@@ -58,8 +58,9 @@ public class RecorderService extends Service {
         String id = intent.getStringExtra("sessionId");
         String sensitivity = intent.getStringExtra("sensitivity");
         boolean keepClips = intent.getBooleanExtra("keepClips", true);
+        String[] tags = intent.getStringArrayExtra("tags");
         try {
-            begin(id != null ? id : SessionStore.newId(), sensitivity != null ? sensitivity : "normal", keepClips);
+            begin(id != null ? id : SessionStore.newId(), sensitivity != null ? sensitivity : "normal", keepClips, tags);
             current = this;
         } catch (Exception e) {
             shutdown();
@@ -91,7 +92,14 @@ public class RecorderService extends Service {
         return session;
     }
 
-    private void begin(String id, String sensitivity, boolean keepClips) {
+    /** Notes for the live night; false if `id` isn't the one recording. */
+    boolean updateMeta(String id, JSONObject meta) {
+        if (!running || store == null || !store.id.equals(id)) return false;
+        store.setMeta(meta);
+        return true;
+    }
+
+    private void begin(String id, String sensitivity, boolean keepClips, String[] tags) {
         int sr = SnoreEngine.SAMPLE_RATE;
         int minBuf = AudioRecord.getMinBufferSize(sr, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
         int source = unprocessedSupported() ? MediaRecorder.AudioSource.UNPROCESSED
@@ -105,7 +113,7 @@ public class RecorderService extends Service {
         engine = new SnoreEngine();
         if ("low".equals(sensitivity)) { engine.threshOverFloorDb = 12; engine.snoreThreshold = 0.6; }
         if ("high".equals(sensitivity)) { engine.threshOverFloorDb = 6; engine.snoreThreshold = 0.4; }
-        store = new SessionStore(this, id, sensitivity, keepClips);
+        store = new SessionStore(this, id, sensitivity, keepClips, tags);
         engine.setListener((ev, clip) -> {
             try {
                 JSONObject json = store.add(ev, clip);

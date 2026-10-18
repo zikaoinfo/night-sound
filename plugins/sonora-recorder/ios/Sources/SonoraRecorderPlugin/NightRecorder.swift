@@ -1,6 +1,13 @@
 import AVFoundation
 import Foundation
 
+/// What the user noted about a night: factors/remedies, how rested they feel, a note.
+struct NightMeta: Codable {
+    var tags: [String] = []
+    var rating: Int?
+    var note: String?
+}
+
 struct SessionRecord: Codable {
     var id: String
     var startedAt: String
@@ -12,12 +19,14 @@ struct SessionRecord: Codable {
     var envelope: [Float]
     var events: [SonoraEvent]
     var summary: SessionSummary
+    var meta: NightMeta?
 }
 
 struct RecorderOptions {
     var sensitivity = "normal"      // low | normal | high
     var fullRecording = false       // opt-in: keep the whole night as AAC
     var keepClips = true
+    var tags: [String] = []
 }
 
 enum RecorderError: LocalizedError {
@@ -109,7 +118,8 @@ final class NightRecorder {
             session = SessionRecord(
                 id: id, startedAt: Self.iso.string(from: Date()), endedAt: nil,
                 durationS: 0, noiseFloorDbfs: det.noiseFloor, sensitivity: opts.sensitivity,
-                fullRecording: fullName, envelope: [], events: [], summary: SessionSummary())
+                fullRecording: fullName, envelope: [], events: [], summary: SessionSummary(),
+                meta: NightMeta(tags: opts.tags))
             save()
         }
 
@@ -264,6 +274,24 @@ final class NightRecorder {
         try? installTap()
         engine.prepare()
         try? engine.start()
+    }
+
+    /// Update a night's notes. The live session is changed in memory and
+    /// saved right away; any other night is rewritten on disk.
+    func updateMeta(id: String, meta: NightMeta) -> Bool {
+        let live: Bool = queue.sync {
+            guard session?.id == id else { return false }
+            session?.meta = meta
+            save()
+            return true
+        }
+        if live { return true }
+        guard let found = Self.load(id: id) else { return false }
+        var rec = found.0
+        let dir = found.1
+        rec.meta = meta
+        guard let data = try? JSONEncoder().encode(rec) else { return false }
+        return (try? data.write(to: dir.appendingPathComponent("session.json"), options: .atomic)) != nil
     }
 
     // MARK: stored sessions

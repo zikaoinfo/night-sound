@@ -8,7 +8,8 @@
 import { RingRecorder, encodeWav } from "./recorder.js";
 import { SnoreAnalyzer, CFG, computeReport } from "./analyzer.js";
 import { getNativeRecorder, platform, clipUrl } from "./native.js";
-import { listNights, loadNight, deleteNight, saveWebNight } from "./history.js";
+import { listNights, loadNight, deleteNight, saveWebNight, updateNightMeta, normMeta } from "./history.js";
+import { FACTORS, REMEDIES, customId, labelOf, isRemedy, tagImpact } from "./tags.js";
 
 const $ = (id) => document.getElementById(id);
 const COLORS = {
@@ -37,8 +38,9 @@ const fmtNight = (iso) => new Date(iso).toLocaleString(undefined,
 
 const SETTINGS_KEY = "sonora:settings";
 function loadSettings() {
-  try { return { sensitivity: "normal", fullRecording: false, ...JSON.parse(localStorage.getItem(SETTINGS_KEY)) }; }
-  catch (_) { return { sensitivity: "normal", fullRecording: false }; }
+  const defaults = { sensitivity: "normal", fullRecording: false, nextTags: [], customTags: [] };
+  try { return { ...defaults, ...JSON.parse(localStorage.getItem(SETTINGS_KEY)) }; }
+  catch (_) { return defaults; }
 }
 function saveSettings() {
   try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (_) {}
@@ -89,7 +91,7 @@ class WebSource {
     this.recorder.disconnect();
     this.stream.getTracks().forEach((t) => t.stop());
     await this.ctx.close();
-    await saveWebNight(this.snapshot(), this.startedAt);
+    this.sessionId = await saveWebNight(this.snapshot(), this.startedAt, this.meta);
   }
 
   snapshot() {
@@ -155,6 +157,7 @@ class NativeSource {
     this.durationS = Math.max(this.durationS, session.durationS);
     this.noiseFloor = session.noiseFloorDbfs;
     this.baseUrl = session.baseUrl;
+    this.meta = normMeta(session.meta);
   }
 
   async start(opts) {
@@ -222,9 +225,11 @@ async function makeSource() {
 async function start() {
   closeStored();
   $("note").textContent = "";
+  const tags = [...settings.nextTags];
   try {
     source = await makeSource();
-    await source.start({ sensitivity: settings.sensitivity, fullRecording: settings.fullRecording });
+    source.meta = normMeta({ tags });
+    await source.start({ sensitivity: settings.sensitivity, fullRecording: settings.fullRecording, tags });
   } catch (err) {
     $("note").textContent = source && source.native
       ? "Couldn't start: " + (err.message || err)
@@ -232,7 +237,11 @@ async function start() {
         ". The page needs HTTPS (or localhost) and mic permission.";
     return;
   }
+  // Remedies tend to be habits; factors are about one evening.
+  settings.nextTags = tags.filter((t) => isRemedy(t) || t.startsWith("custom:"));
+  saveSettings();
   setRunning(true);
+  renderNightCard();
   if (!source.native) await requestWakeLock();
 }
 
@@ -242,6 +251,7 @@ async function stop() {
   await releaseWakeLock();
   render();
   renderEvents();
+  renderNightCard();
   refreshHistory();
 }
 
@@ -273,7 +283,18 @@ function summaryText(r) {
   const mostly = Object.entries(r.intensityCounts).sort((a, b) => b[1] - a[1])[0][0];
   const eps = r.episodes.length;
   return `You snored for ${fmtDur(r.snoreTimeS)} (${r.snorePercent.toFixed(0)}% of ${fmtDur(r.durationS)})` +
-    (eps ? ` in ${eps} episode${eps > 1 ? "s" : ""}` : "") + `, mostly ${mostly}.${others}`;
+    (eps ? ` in ${eps} episode${eps > 1 ? "s" : ""}` : "") + `, mostly ${mostly}.${others}` + vsAverage(r);
+}
+
+// " 8 points below your average." — against the other saved nights.
+function vsAverage(r) {
+  const thisId = stored ? stored.id : source && source.sessionId;
+  const others = nights.filter((n) => n.id !== thisId && Number.isFinite(n.snoreScore));
+  if (others.length < 2) return "";
+  const avg = others.reduce((a, n) => a + n.snoreScore, 0) / others.length;
+  const d = Math.round(r.snoreScore - avg);
+  if (Math.abs(d) < 3) return " About your usual.";
+  return ` ${Math.abs(d)} points ${d < 0 ? "below" : "above"} your average.`;
 }
 
 // ---------------------------------------------------------------- render: tonight
@@ -434,6 +455,7 @@ async function openNight(id) {
   showTab("tonight");
   render();
   renderEvents();
+  renderNightCard();
 }
 
 function closeStored() {
@@ -447,6 +469,7 @@ function closeStored() {
 
 function backToTonight() {
   closeStored();
+  renderNightCard();
   if (source) { render(); renderEvents(); }
   else {
     $("scoreVal").textContent = "—";
@@ -484,6 +507,7 @@ async function refreshHistory() {
   const live = running && source && source.sessionId;
   nights = nights.filter((n) => n.id !== live);
   renderNightList();
+  renderImpact();
   drawTrend();
 }
 
@@ -503,12 +527,119 @@ function renderNightList() {
       `<span class="night-date">${fmtNight(n.startedAt)}</span>` +
       `<span class="night-score">${Math.round(n.snoreScore)}<small>/100</small></span>` +
       `<span class="night-meta">${fmtDur(n.durationS)} · snoring ${n.snorePercent.toFixed(0)}% · ` +
-      `${n.episodes} episode${n.episodes === 1 ? "" : "s"}${unfinished}</span>`;
+      `${n.episodes} episode${n.episodes === 1 ? "" : "s"}${unfinished}</span>` +
+      nightTagsLine(n.meta);
     b.setAttribute("aria-label", `Open the night of ${fmtNight(n.startedAt)}, score ${Math.round(n.snoreScore)}`);
     b.onclick = () => openNight(n.id);
     li.appendChild(b);
     ul.appendChild(li);
   }
+}
+
+function nightTagsLine(meta) {
+  const m = normMeta(meta);
+  const parts = m.tags.map(labelOf);
+  if (m.rating) parts.unshift(`rested ${m.rating}/5`);
+  if (!parts.length) return "";
+  const span = document.createElement("span");
+  span.className = "night-tags";
+  span.textContent = parts.join(" · ");
+  return span.outerHTML;
+}
+
+function renderImpact() {
+  const ul = $("impactList");
+  const rows = tagImpact(nights);
+  if (!rows.length) {
+    ul.innerHTML = '<li class="empty">Tag a few nights with factors and remedies to see what makes a difference.</li>';
+    return;
+  }
+  ul.innerHTML = "";
+  for (const r of rows) {
+    const better = r.delta < 0;
+    const li = document.createElement("li");
+    li.className = "impact-item";
+    const pts = Math.round(Math.abs(r.delta));
+    const width = Math.min(50, Math.abs(r.delta) / 2);       // 100 points = full half-bar
+    li.innerHTML =
+      `<span class="impact-name"></span>` +
+      `<span class="impact-delta ${better ? "better" : "worse"}">${better ? "−" : "+"}${pts}</span>` +
+      `<span class="impact-bar" aria-hidden="true"><i class="${better ? "better" : "worse"}" ` +
+      `style="${better ? `right:50%;width:${width}%` : `left:50%;width:${width}%`}"></i></span>` +
+      `<span class="impact-meta">Score ${Math.round(r.withScore)} with vs ${Math.round(r.withoutScore)} without ` +
+      `(${r.nightsWith} vs ${r.nightsWithout} nights)</span>`;
+    li.querySelector(".impact-name").innerHTML = "";
+    li.querySelector(".impact-name").textContent = r.label + " ";
+    const kind = document.createElement("small");
+    kind.textContent = r.remedy ? "remedy" : "factor";
+    li.querySelector(".impact-name").appendChild(kind);
+    li.setAttribute("aria-label", `${r.label}: ${pts} points ${better ? "lower" : "higher"} Snore Score on nights with it`);
+    ul.appendChild(li);
+  }
+}
+
+// ---------------------------------------------------------------- factors, remedies, rating, note
+
+// Which night the card edits: a saved night being viewed, tonight's
+// recording (or the one just finished), or the next night (not started yet).
+function metaTarget() {
+  if (stored) return { id: stored.id, meta: stored.meta, holder: stored };
+  if (source) return { id: source.sessionId, meta: source.meta || normMeta(), holder: source };
+  return { id: null, meta: normMeta({ tags: settings.nextTags }), holder: null };
+}
+
+function renderNightCard() {
+  const t = metaTarget();
+  $("nightCardTitle").textContent = stored ? "Factors & remedies for this night"
+    : source && !running ? "Last night's factors & remedies" : "Tonight's factors & remedies";
+  const known = new Set([...FACTORS, ...REMEDIES].map((x) => x.id));
+  const custom = [...new Set([...settings.customTags.map(customId), ...t.meta.tags.filter((x) => !known.has(x))])];
+  fillChips($("factorChips"), [...FACTORS.map((x) => x.id), ...custom], t.meta.tags);
+  fillChips($("remedyChips"), REMEDIES.map((x) => x.id), t.meta.tags);
+
+  const morning = !!stored || (!!source && !running);
+  $("morningBlock").hidden = !morning;
+  document.querySelectorAll('input[name="rating"]').forEach((r) => (r.checked = Number(r.value) === t.meta.rating));
+  if (document.activeElement !== $("nightNote")) $("nightNote").value = t.meta.note || "";
+}
+
+function fillChips(container, ids, selected) {
+  container.innerHTML = "";
+  for (const id of ids) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "chip";
+    b.textContent = labelOf(id);
+    b.setAttribute("aria-pressed", String(selected.includes(id)));
+    b.onclick = () => toggleTag(id);
+    container.appendChild(b);
+  }
+}
+
+function toggleTag(id) {
+  const { meta } = metaTarget();
+  const tags = meta.tags.includes(id) ? meta.tags.filter((x) => x !== id) : [...meta.tags, id];
+  saveMeta({ ...meta, tags });
+}
+
+let metaTimer = null;
+function saveMeta(meta) {
+  const t = metaTarget();
+  if (t.holder) t.holder.meta = meta;
+  else { settings.nextTags = meta.tags; saveSettings(); }
+  renderNightCard();
+  clearTimeout(metaTimer);
+  if (!t.id) { $("metaStatus").textContent = ""; return; }   // saved with the night when it ends
+  metaTimer = setTimeout(async () => {
+    try {
+      await updateNightMeta(t.id, meta);
+      $("metaStatus").textContent = "Saved";
+      const n = nights.find((x) => x.id === t.id);
+      if (n) n.meta = meta;
+    } catch (err) {
+      $("metaStatus").textContent = "Couldn't save: " + (err.message || err);
+    }
+  }, 400);
 }
 
 // Bars: Snore Score of the last 14 nights, oldest on the left.
@@ -610,7 +741,24 @@ $("tabTonight").addEventListener("click", () => showTab("tonight"));
 $("tabHistory").addEventListener("click", () => showTab("history"));
 window.addEventListener("resize", () => { if (!$("viewHistory").hidden) drawTrend(); else render(); });
 
+$("customTagForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const text = $("customTag").value.trim();
+  if (!text) return;
+  if (!settings.customTags.includes(text)) settings.customTags.push(text);
+  saveSettings();
+  $("customTag").value = "";
+  const { meta } = metaTarget();
+  const id = customId(text);
+  saveMeta({ ...meta, tags: meta.tags.includes(id) ? meta.tags : [...meta.tags, id] });
+});
+document.querySelectorAll('input[name="rating"]').forEach((r) =>
+  r.addEventListener("change", () => saveMeta({ ...metaTarget().meta, rating: Number(r.value) })));
+$("nightNote").addEventListener("input", () => saveMeta({ ...metaTarget().meta, note: $("nightNote").value }));
+
 initSettings();
+renderNightCard();
+refreshHistory();
 $("note").textContent =
   "Tip: keep the phone near the bed and plugged in. In the Sonora app you can lock the screen; " +
   "in a browser the screen has to stay on. Nothing is uploaded.";

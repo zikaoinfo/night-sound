@@ -53,7 +53,7 @@ export async function listNights() {
     const all = await withStore("readonly", (s) => s.getAll());
     return all
       .map((n) => ({ id: n.id, startedAt: n.startedAt, endedAt: n.endedAt,
-                     durationS: n.durationS, ...n.summary }))
+                     durationS: n.durationS, meta: n.meta, ...n.summary }))
       .sort((a, b) => b.id.localeCompare(a.id));
   } catch (_) {
     return [];   // private mode or storage blocked: no history, app still works
@@ -65,7 +65,7 @@ export async function loadNight(id) {
   if (native) {
     const s = await native.plugin.getSession({ id });
     return {
-      id, startedAt: s.startedAt,
+      id, startedAt: s.startedAt, meta: normMeta(s.meta),
       snap: { events: s.events, envelope: envelopeToPoints(s.envelope),
               durationS: s.durationS, noiseFloorDbfs: s.noiseFloorDbfs },
       clipSrc: (ev) => (ev.clip ? clipUrl(s.baseUrl, ev.clip) : null),
@@ -74,7 +74,7 @@ export async function loadNight(id) {
   const n = await withStore("readonly", (s) => s.get(id));
   if (!n) throw new Error("That night is no longer saved.");
   return {
-    id, startedAt: n.startedAt,
+    id, startedAt: n.startedAt, meta: normMeta(n.meta),
     snap: { events: n.events, envelope: envelopeToPoints(n.envelope),
             durationS: n.durationS, noiseFloorDbfs: n.noiseFloorDbfs },
     clipSrc: () => null,
@@ -87,8 +87,25 @@ export async function deleteNight(id) {
   return withStore("readwrite", (s) => s.delete(id));
 }
 
+export const normMeta = (m) => ({ tags: [], rating: null, note: "", ...(m || {}) });
+
+// Save a night's tags, rating and note.
+export async function updateNightMeta(id, meta) {
+  const m = normMeta(meta);
+  const native = await getNativeRecorder();
+  if (native) {
+    const args = { id, tags: m.tags, note: m.note || "" };
+    if (m.rating) args.rating = m.rating;
+    return native.plugin.updateSession(args);
+  }
+  const n = await withStore("readonly", (s) => s.get(id));
+  if (!n) return;
+  n.meta = m;
+  return withStore("readwrite", (s) => s.put(n));
+}
+
 // Browser only: the native plugin saves its own sessions.
-export async function saveWebNight(snap, startedAt) {
+export async function saveWebNight(snap, startedAt, meta) {
   const perSecond = [];
   for (const p of snap.envelope) {
     const i = Math.floor(p.t);
@@ -108,6 +125,7 @@ export async function saveWebNight(snap, startedAt) {
     envelope,
     events: snap.events.map(({ clip, inEpisode, confirmedSnore, ...e }) => e),
     summary: summaryOf(computeReport(snap)),
+    meta: normMeta(meta),
   };
   try {
     await withStore("readwrite", (s) => s.put(night));

@@ -169,3 +169,25 @@ nights, runs entirely on-device, and feels trustworthy on your own recordings.
 Phase 1: build milestone 1 on your Mac and run it on your iPhone (steps in
 `CAPACITOR.md`). In parallel I can start the Phase 2 Swift background plugin so
 it's ready when you are. Tell me which to prioritise.
+
+---
+
+## 9. Premium features (parity with iRonfle / SnoreLab Premium)
+
+iRonfle is SnoreLab's French edition (same App Store id 529443604). Its
+Premium tier: full-night recording, trends, factors & remedies comparison,
+nightly comparison, cloud backup, emailing a night's report with audio.
+Sonora builds all of them in, kept on-device:
+
+- [x] **P1 Factors & remedies + rest rating + notes**, and "what affects your
+      snoring" (average score with vs without each tag); custom tags;
+      comparison with your average in the morning summary.
+- [ ] **P2 Start delay** (don't count the first 0–60 min while falling asleep).
+- [ ] **P3 Full-night recording + playback** on iOS, Android and web; tap
+      the timeline to listen from that moment.
+- [ ] **P4 Night report (PDF) to share with a doctor**, with the clips.
+- [ ] **P5 Sound labels** for other noises (talking, coughing, …) on iOS
+      via Apple's built-in sound classifier.
+- [ ] **P6 Backup & restore** to a file you keep (iCloud Drive / Google
+      Drive / anywhere) — the privacy-preserving alternative to a cloud
+      account.
