@@ -23,6 +23,15 @@ Apple ID signs it with a 7-day certificate (re-run from Xcode to renew).
 
 ## Build it (milestone 1)
 
+Shortcut — does everything below, including the Info.plist keys:
+
+```bash
+git clone https://github.com/zikaoinfo/night-sound.git && cd night-sound
+./scripts/setup-ios.sh
+```
+
+Or step by step:
+
 ```bash
 git clone https://github.com/zikaoinfo/night-sound.git
 cd night-sound
