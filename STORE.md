@@ -12,8 +12,8 @@ devices.
       permanent once you create the store listing, so change it now if you
       want a different one.
 - [ ] Icons and splash: `npx @capacitor/assets generate` (see CAPACITOR.md).
-- [ ] Privacy policy is live: enable GitHub Pages (Settings → Pages → `master`,
-      root); the URL is `https://zikaoinfo.github.io/night-sound/web/privacy.html`.
+- [ ] Privacy policy is live: GitHub Pages (Source: GitHub Actions) deploys `web/`;
+      the URL is `https://zikaoinfo.github.io/night-sound/privacy.html`.
 - [ ] Version: Xcode → App target → General → Version `1.0.0`, Build `1`;
       Android `android/app/build.gradle` → `versionName "1.0.0"`, `versionCode 1`.
 

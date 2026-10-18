@@ -31,8 +31,8 @@ python3 -m http.server 8137
 
 **On your phone — via GitHub Pages (free HTTPS):**
 1. Push this repo (already on GitHub).
-2. Repo → Settings → Pages → Build from branch → `master` / root.
-3. Open `https://<you>.github.io/night-sound/web/` on your phone and allow
+2. Repo → Settings → Pages → Source: **GitHub Actions** (the `Deploy web app to Pages` workflow publishes `web/` on every push to `master`).
+3. Open `https://zikaoinfo.github.io/night-sound/` on your phone and allow
    the mic.
 
 Keep the screen on and the phone plugged in near the bed. Note the limit
