@@ -29,6 +29,8 @@ final class SessionStore {
     final String sensitivity;
     private final boolean keepClips;
     private final double startDelayS;
+    /** "full.m4a" when the whole night is recorded, else null. */
+    String fullRecording;
     private JSONObject meta;
     private final List<SnoreEngine.Event> events = new ArrayList<>();
     private final List<Integer> snoreClipIndexes = new ArrayList<>();
@@ -118,7 +120,7 @@ final class SessionStore {
         o.put("durationS", durationS);
         o.put("noiseFloorDbfs", finite(noiseFloor));
         o.put("sensitivity", sensitivity);
-        o.put("fullRecording", JSONObject.NULL);
+        o.put("fullRecording", fullRecording == null ? JSONObject.NULL : fullRecording);
         o.put("startDelayS", startDelayS);
         JSONArray env = new JSONArray();
         for (float v : envelope) env.put(finite(v));

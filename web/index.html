@@ -70,6 +70,10 @@
       </section>
 
       <canvas id="timeline" class="timeline" width="800" height="150" role="img" aria-label="Timeline of the night: snores and other sounds"></canvas>
+      <div class="fullplayer" id="fullPlayer" hidden>
+        <audio id="fullAudio" controls preload="metadata"></audio>
+        <p class="hint">Tap the timeline to listen from that moment.</p>
+      </div>
       <div class="legend">
         <span data-k="quiet">quiet</span><span data-k="light">light</span>
         <span data-k="loud">loud</span><span data-k="epic">epic</span>
@@ -135,7 +139,7 @@
         </label>
         <label class="check" id="fullRow" hidden>
           <input type="checkbox" id="optFull" />
-          Keep the whole night's audio <small>— about 115 MB per 8 hours, stays on this phone</small>
+          Record the whole night <small>— listen to any moment; about 115 MB per 8 hours, stays on this device</small>
         </label>
         <p class="hint" id="settingsHint">Changes apply from the next session.</p>
       </details>

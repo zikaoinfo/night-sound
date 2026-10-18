@@ -81,6 +81,7 @@ public class SonoraRecorderPlugin extends Plugin {
             .putExtra("sessionId", id)
             .putExtra("sensitivity", call.getString("sensitivity", "normal"))
             .putExtra("keepClips", call.getBoolean("keepClips", true))
+            .putExtra("fullRecording", call.getBoolean("fullRecording", false))
             .putExtra("tags", stringArray(call.getArray("tags")))
             .putExtra("startDelayS", call.getDouble("startDelayS") == null ? 0.0 : call.getDouble("startDelayS"));
         ContextCompat.startForegroundService(getContext(), intent);

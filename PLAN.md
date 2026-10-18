@@ -93,7 +93,7 @@ Engine (Python + JS), web app, Capacitor scaffold.
       Java port of the engine (matches the Python engine on the synthetic
       night: same 37 events, 3 episodes, noise floor), same plugin API.
       Type-checked against the Android 14 API; `scripts/setup-android.sh`.
-- [ ] Android full-night recording (AAC via MediaCodec) — later.
+- [x] Android full-night recording (AAC via MediaCodec + MediaMuxer).
 **Done when:** an 8-hour screen-off session captures events accurately with
 acceptable battery use.
 
@@ -183,7 +183,7 @@ Sonora builds all of them in, kept on-device:
       snoring" (average score with vs without each tag); custom tags;
       comparison with your average in the morning summary.
 - [x] **P2 Start delay** (off / 15 / 30 / 45 / 60 min) on iOS, Android and web.
-- [ ] **P3 Full-night recording + playback** on iOS, Android and web; tap
+- [x] **P3 Full-night recording + playback** on iOS, Android and web; tap
       the timeline to listen from that moment.
 - [ ] **P4 Night report (PDF) to share with a doctor**, with the clips.
 - [ ] **P5 Sound labels** for other noises (talking, coughing, …) on iOS

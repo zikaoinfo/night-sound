@@ -61,8 +61,8 @@ re-run in Xcode.
 
 On Android the recorder runs as a foreground service, so a "Sonora is
 listening" notification stays up while it records — Android requires that for
-overnight microphone use. Full-night recording is iOS-only for now; event clips
-work on both.
+overnight microphone use. Full-night recording (Settings → Record the whole
+night) works on both; it's encoded to AAC at about 115 MB per 8 hours.
 
 ---
 

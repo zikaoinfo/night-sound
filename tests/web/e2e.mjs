@@ -154,6 +154,40 @@ async function newPage(initScript) {
   await page.context().close();
 }
 
+// ------------------------------------------------------------ full-night recording
+{
+  console.log("full-night recording (web)");
+  const { page, errors } = await newPage(() =>
+    localStorage.setItem("sonora:settings", JSON.stringify({ fullRecording: true })));
+  await page.goto(URL);
+  check(await page.isChecked("#optFull"), "full-night setting shown and on");
+  await page.click("#btnStart");
+  await page.waitForTimeout(3500);
+  check(await page.$eval("#fullPlayer", (el) => el.hidden), "no player while recording");
+  await page.click("#btnStop");
+  await page.waitForTimeout(800);
+  check(!(await page.$eval("#fullPlayer", (el) => el.hidden)), "player appears after the night");
+  await page.reload();
+  await page.click("#tabHistory");
+  await page.waitForTimeout(400);
+  await page.click("#nightList .night");
+  await page.waitForTimeout(600);
+  check(!(await page.$eval("#fullPlayer", (el) => el.hidden)), "saved night keeps its full recording");
+  const dur = await page.evaluate(() => new Promise((res) => {
+    const a = document.getElementById("fullAudio");
+    if (a.readyState >= 1) res(a.duration); else a.onloadedmetadata = () => res(a.duration);
+    setTimeout(() => res(-1), 3000);
+  }));
+  check(dur !== -1, `recording loads (duration ${dur})`);
+  const box = await page.$eval("#timeline", (c) => { const r = c.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; });
+  await page.mouse.click(box.x + box.w * 0.5, box.y + box.h / 2);
+  await page.waitForTimeout(500);
+  const t = await page.$eval("#fullAudio", (a) => a.currentTime);
+  check(t > 0, `tapping the timeline seeks the recording (t=${t.toFixed(2)})`);
+  check(errors.length === 0, "no page errors" + (errors.length ? ": " + errors.join(" | ") : ""));
+  await page.context().close();
+}
+
 // ------------------------------------------------------------ native mode
 // Mock of what the iOS shell injects before the page loads.
 const nativeMock = () => {
@@ -184,7 +218,7 @@ const nativeMock = () => {
   const session = () => ({ id: "20261018-230000", startedAt: "2026-10-18T23:00:00Z",
     endedAt: state.recording ? null : "2026-10-19T06:30:00Z", durationS: state.t, noiseFloorDbfs: -55,
     envelope: Array.from({ length: Math.floor(state.t) }, () => -45), events: state.events,
-    baseUrl: "file:///docs/Sonora/sessions/20261018-230000/", meta: state.meta });
+    baseUrl: "file:///docs/Sonora/sessions/20261018-230000/", meta: state.meta, fullRecording: "full.m4a" });
   if (state.recording) timer = setInterval(tick, 50);
 
   const plugin = {
@@ -218,6 +252,8 @@ const nativeMock = () => {
 {
   console.log("native mode (mock iOS bridge)");
   const { page, errors } = await newPage(nativeMock);
+  // Files the real app would read from the device; the mock has none.
+  await page.route("**/_capacitor_file_/**", (r) => r.fulfill({ status: 200, contentType: "audio/mp4", body: "" }));
   await page.goto(URL);
   await page.click("#btnStart");
   await page.waitForTimeout(1200);           // ~24 mock ticks = 6 s of "night"
@@ -255,6 +291,9 @@ const nativeMock = () => {
   check(!!(await page.$("#eventList .ev-play")), "a saved night's clips are playable");
   const clipSrcOk = await page.evaluate(() => typeof window.Capacitor.convertFileSrc === "function");
   check(clipSrcOk, "clip URLs go through convertFileSrc");
+  const fullSrc = await page.$eval("#fullAudio", (a) => a.getAttribute("src") || "");
+  check(!(await page.$eval("#fullPlayer", (el) => el.hidden)) && fullSrc.endsWith("/full.m4a")
+        && fullSrc.startsWith("/_capacitor_file_"), `native full recording offered (${fullSrc})`);
   await page.click('#factorChips .chip:has-text("Late meal")');
   await page.click('label:has(#rate2)');
   await page.waitForTimeout(700);

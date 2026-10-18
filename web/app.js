@@ -75,11 +75,18 @@ class WebSource {
       sampleRate: this.ctx.sampleRate, fftSize: analyser.fftSize, recorder: this.recorder,
       sensitivity: opts.sensitivity, onEvent: () => this.onChange(),
     });
+    if (opts.fullRecording && window.MediaRecorder) {
+      const type = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm"].find((t) => MediaRecorder.isTypeSupported(t));
+      this.chunks = [];
+      this.mr = new MediaRecorder(this.stream, { ...(type ? { mimeType: type } : {}), audioBitsPerSecond: 32000 });
+      this.mr.ondataavailable = (e) => { if (e.data.size) this.chunks.push(e.data); };
+    }
     const timeData = new Float32Array(analyser.fftSize);
     const freqDb = new Float32Array(analyser.frequencyBinCount);
     this.timer = setInterval(() => {
       const wait = (this.listenFrom - Date.now()) / 1000;
       if (wait > 0) { this.onLevel({ t: 0, waitingS: wait }); return; }
+      if (this.mr && this.mr.state === "inactive") this.mr.start(10000);   // starts with the analysis
       analyser.getFloatTimeDomainData(timeData);
       analyser.getFloatFrequencyData(freqDb);
       const info = this.analyzer.pushFrame(this.ctx.currentTime, timeData, freqDb);
@@ -91,10 +98,20 @@ class WebSource {
     clearInterval(this.timer);
     this.analyzer.flush(this.ctx.currentTime);
     this.duration = this.ctx.currentTime - (this.analyzer.startTime ?? this.ctx.currentTime);
+    if (this.mr && this.mr.state !== "inactive") {
+      await new Promise((resolve) => { this.mr.onstop = resolve; this.mr.stop(); });
+      this.fullBlob = new Blob(this.chunks, { type: this.mr.mimeType || "audio/webm" });
+    }
     this.recorder.disconnect();
     this.stream.getTracks().forEach((t) => t.stop());
     await this.ctx.close();
-    this.sessionId = await saveWebNight(this.snapshot(), this.startedAt, this.meta);
+    this.sessionId = await saveWebNight(this.snapshot(), this.startedAt, this.meta, this.fullBlob);
+  }
+
+  fullSrc() {
+    if (!this.fullBlob) return null;
+    if (!this.fullUrl) this.fullUrl = URL.createObjectURL(this.fullBlob);
+    return this.fullUrl;
   }
 
   snapshot() {
@@ -162,6 +179,7 @@ class NativeSource {
     this.noiseFloor = session.noiseFloorDbfs;
     this.baseUrl = session.baseUrl;
     this.meta = normMeta(session.meta);
+    this.fullRecording = session.endedAt ? session.fullRecording : null;
   }
 
   async start(opts) {
@@ -202,6 +220,11 @@ class NativeSource {
   clipSrc(ev) {
     return typeof ev.clip === "string" && this.baseUrl ? clipUrl(this.baseUrl, ev.clip) : null;
   }
+
+  // Only once the night has ended: the file is finalised on stop.
+  fullSrc() {
+    return this.fullRecording && this.baseUrl ? clipUrl(this.baseUrl, this.fullRecording) : null;
+  }
 }
 
 // ---------------------------------------------------------------- state
@@ -214,9 +237,10 @@ let wakeLock = null;
 
 // What the Tonight tab is showing right now.
 function current() {
-  if (stored) return { snap: stored.snap, clipSrc: stored.clipSrc };
+  if (stored) return { snap: stored.snap, clipSrc: stored.clipSrc, fullSrc: stored.fullSrc };
   const snap = source && source.snapshot();
-  return snap ? { snap, clipSrc: (ev) => source.clipSrc(ev) } : null;
+  return snap ? { snap, clipSrc: (ev) => source.clipSrc(ev),
+                  fullSrc: running ? null : source.fullSrc() } : null;
 }
 
 async function makeSource() {
@@ -322,7 +346,29 @@ function render() {
     $("liveClock").textContent = fmt(r.durationS);
     $("scoreSub").textContent = summaryText(r);
   }
+  setFullPlayer(cur.fullSrc);
   drawTimeline(cur.snap, r);
+}
+
+// ---------------------------------------------------------------- full-night playback
+
+let playerSrc = null;
+let timelineDur = 1;
+
+function setFullPlayer(src) {
+  if (src === playerSrc) return;
+  playerSrc = src || null;
+  const audio = $("fullAudio");
+  audio.pause();
+  if (playerSrc) audio.src = playerSrc; else audio.removeAttribute("src");
+  $("fullPlayer").hidden = !playerSrc;
+  $("timeline").classList.toggle("seekable", !!playerSrc);
+}
+
+function playFrom(t) {
+  const audio = $("fullAudio");
+  audio.currentTime = Math.max(0, t);
+  audio.play().catch((err) => { $("note").textContent = "Couldn't play the recording: " + err.message; });
 }
 
 function updateMeter(info) {
@@ -367,6 +413,7 @@ function sizeCanvas(cv) {
 function drawTimeline(snap, r) {
   const { ctx, w, h } = sizeCanvas($("timeline"));
   const dur = Math.max(r.durationS, 1);
+  timelineDur = dur;
   const floor = r.noiseFloorDbfs || -55;
   const bottom = floor - 10, top = 0;
   const yOf = (db) => h - Math.max(0, Math.min(1, (db - bottom) / (top - bottom))) * (h - 10) - 5;
@@ -397,6 +444,13 @@ function drawTimeline(snap, r) {
       ctx.closePath(); ctx.fill();
     }
   }
+
+  const audio = $("fullAudio");
+  if (playerSrc && audio.currentTime > 0) {          // playhead
+    const x = Math.min(w - 1, (audio.currentTime / dur) * w);
+    ctx.fillStyle = getToken("--fg");
+    ctx.fillRect(x - 1, 0, 2, h);
+  }
 }
 
 function renderEvents() {
@@ -420,11 +474,12 @@ function renderEvents() {
       `<span class="ev-badge ${badge}">${badge}</span>` +
       `<span class="ev-meta">${e.intensity} · ${e.durationS.toFixed(1)}s · ${e.peakDbfs.toFixed(0)}dB` +
       (e.f0 ? ` · ${e.f0.toFixed(0)}Hz` : "") + `</span>`;
-    if (e.clip) {
+    if (e.clip || cur.fullSrc) {
       const btn = document.createElement("button");
       btn.className = "ev-play"; btn.textContent = "▶";
       btn.setAttribute("aria-label", `Play the ${badge} at ${fmt(e.startS)}`);
-      btn.onclick = () => playClip(cur.clipSrc(e));
+      // the saved clip if there is one, otherwise that moment of the full night
+      btn.onclick = () => (e.clip ? playClip(cur.clipSrc(e)) : playFrom(e.startS - 1));
       li.appendChild(btn);
     }
     ul.appendChild(li);
@@ -500,6 +555,7 @@ function backToTonight() {
     $("statEvents").textContent = "0";
     $("statEpisodes").textContent = "0";
     $("liveClock").textContent = "0:00";
+    setFullPlayer(null);
     sizeCanvas($("timeline"));
     renderEvents();
   }
@@ -750,8 +806,16 @@ function initSettings() {
   $("optFull").checked = settings.fullRecording;
   $("optFull").addEventListener("change", () => { settings.fullRecording = $("optFull").checked; saveSettings(); });
   // Full-night audio is recorded by the iOS plugin only.
-  platform().then((p) => { $("fullRow").hidden = p !== "ios"; });
+  // Native plugins encode AAC; browsers use MediaRecorder.
+  platform().then((p) => { $("fullRow").hidden = p === "web" && !window.MediaRecorder; });
 }
+
+$("timeline").addEventListener("click", (e) => {
+  if (!playerSrc) return;
+  const rect = $("timeline").getBoundingClientRect();
+  playFrom(((e.clientX - rect.left) / rect.width) * timelineDur);
+});
+$("fullAudio").addEventListener("timeupdate", () => { if (current()) render(); });
 
 $("btnStart").addEventListener("click", start);
 $("btnStop").addEventListener("click", stop);

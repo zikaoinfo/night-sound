@@ -1,29 +1,34 @@
 // history.js — past nights.
 //   In the app: the native plugin's session folders (with clips).
-//   In a browser: IndexedDB (events and per-second loudness; clips are only
-//   kept in memory, so they don't survive a reload).
-// Every night comes back in one shape: { id, startedAt, snap, clipSrc }.
+//   In a browser: IndexedDB (events, per-second loudness, and the full-night
+//   audio if it was recorded; short clips are only kept in memory).
+// Every night comes back in one shape: { id, startedAt, meta, snap, clipSrc, fullSrc }.
 
 import { getNativeRecorder, clipUrl } from "./native.js";
 import { computeReport } from "./analyzer.js";
 
 const DB_NAME = "sonora";
 const STORE = "nights";
+const AUDIO = "audio";      // { id, blob } — full-night recordings
 
 function openDb() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = () => req.result.createObjectStore(STORE, { keyPath: "id" });
+    const req = indexedDB.open(DB_NAME, 2);
+    req.onupgradeneeded = () => {
+      for (const name of [STORE, AUDIO]) {
+        if (!req.result.objectStoreNames.contains(name)) req.result.createObjectStore(name, { keyPath: "id" });
+      }
+    };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
 }
 
-async function withStore(mode, fn) {
+async function withStore(mode, fn, name = STORE) {
   const db = await openDb();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, mode);
-    const req = fn(tx.objectStore(STORE));
+    const tx = db.transaction(name, mode);
+    const req = fn(tx.objectStore(name));
     tx.oncomplete = () => { db.close(); resolve(req ? req.result : undefined); };
     tx.onerror = () => { db.close(); reject(tx.error); };
   });
@@ -69,6 +74,7 @@ export async function loadNight(id) {
       snap: { events: s.events, envelope: envelopeToPoints(s.envelope),
               durationS: s.durationS, noiseFloorDbfs: s.noiseFloorDbfs },
       clipSrc: (ev) => (ev.clip ? clipUrl(s.baseUrl, ev.clip) : null),
+      fullSrc: s.fullRecording ? clipUrl(s.baseUrl, s.fullRecording) : null,
     };
   }
   const n = await withStore("readonly", (s) => s.get(id));
@@ -78,13 +84,24 @@ export async function loadNight(id) {
     snap: { events: n.events, envelope: envelopeToPoints(n.envelope),
             durationS: n.durationS, noiseFloorDbfs: n.noiseFloorDbfs },
     clipSrc: () => null,
+    fullSrc: await fullAudioUrl(id),
   };
 }
 
 export async function deleteNight(id) {
   const native = await getNativeRecorder();
   if (native) return native.plugin.deleteSession({ id });
+  await withStore("readwrite", (s) => s.delete(id), AUDIO).catch(() => {});
   return withStore("readwrite", (s) => s.delete(id));
+}
+
+async function fullAudioUrl(id) {
+  try {
+    const rec = await withStore("readonly", (s) => s.get(id), AUDIO);
+    return rec ? URL.createObjectURL(rec.blob) : null;
+  } catch (_) {
+    return null;
+  }
 }
 
 export const normMeta = (m) => ({ tags: [], rating: null, note: "", ...(m || {}) });
@@ -105,7 +122,7 @@ export async function updateNightMeta(id, meta) {
 }
 
 // Browser only: the native plugin saves its own sessions.
-export async function saveWebNight(snap, startedAt, meta) {
+export async function saveWebNight(snap, startedAt, meta, fullBlob) {
   const perSecond = [];
   for (const p of snap.envelope) {
     const i = Math.floor(p.t);
@@ -129,6 +146,7 @@ export async function saveWebNight(snap, startedAt, meta) {
   };
   try {
     await withStore("readwrite", (s) => s.put(night));
+    if (fullBlob) await withStore("readwrite", (s) => s.put({ id, blob: fullBlob }), AUDIO);
   } catch (_) {
     // Storage unavailable: the night still shows until the page is closed.
   }

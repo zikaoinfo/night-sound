@@ -51,6 +51,7 @@ public class RecorderService extends Service {
     private PowerManager.WakeLock wakeLock;
     private SessionStore store;
     private SnoreEngine engine;
+    private FullRecorder full;
 
     @Override
     public IBinder onBind(Intent intent) { return null; }
@@ -64,10 +65,11 @@ public class RecorderService extends Service {
         boolean keepClips = intent.getBooleanExtra("keepClips", true);
         String[] tags = intent.getStringArrayExtra("tags");
         double delayS = intent.getDoubleExtra("startDelayS", 0);
+        boolean fullRecording = intent.getBooleanExtra("fullRecording", false);
         listenFrom = System.currentTimeMillis() + (long) (Math.max(0, delayS) * 1000);
         try {
             begin(id != null ? id : SessionStore.newId(), sensitivity != null ? sensitivity : "normal", keepClips, tags,
-                  Math.max(0, delayS));
+                  Math.max(0, delayS), fullRecording);
             current = this;
         } catch (Exception e) {
             shutdown();
@@ -107,7 +109,8 @@ public class RecorderService extends Service {
         return true;
     }
 
-    private void begin(String id, String sensitivity, boolean keepClips, String[] tags, double delayS) {
+    private void begin(String id, String sensitivity, boolean keepClips, String[] tags, double delayS,
+                       boolean fullRecording) {
         int sr = SnoreEngine.SAMPLE_RATE;
         int minBuf = AudioRecord.getMinBufferSize(sr, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
         int source = unprocessedSupported() ? MediaRecorder.AudioSource.UNPROCESSED
@@ -122,6 +125,14 @@ public class RecorderService extends Service {
         if ("low".equals(sensitivity)) { engine.threshOverFloorDb = 12; engine.snoreThreshold = 0.6; }
         if ("high".equals(sensitivity)) { engine.threshOverFloorDb = 6; engine.snoreThreshold = 0.4; }
         store = new SessionStore(this, id, sensitivity, keepClips, tags, delayS);
+        if (fullRecording) {
+            try {
+                full = new FullRecorder(new java.io.File(store.dir, "full.m4a"));
+                store.fullRecording = "full.m4a";
+            } catch (Exception e) {
+                full = null;   // no encoder: carry on with clips only
+            }
+        }
         engine.setListener((ev, clip) -> {
             try {
                 JSONObject json = store.add(ev, clip);
@@ -161,6 +172,7 @@ public class RecorderService extends Service {
                     continue;
                 }
                 for (int i = 0; i < n; i++) samples[i] = pcm[i] / 32768f;
+                if (full != null) full.write(pcm, n);
                 engine.process(samples, n);
                 elapsedS = engine.elapsedS();
                 noiseFloor = engine.noiseFloor();
@@ -177,6 +189,7 @@ public class RecorderService extends Service {
                 }
             }
             engine.flush();
+            if (full != null) { full.finish(); full = null; }
             store.save(engine.elapsedS(), engine.noiseFloor(), engine.envelope(), SessionStore.iso(new java.util.Date()));
         } catch (Exception ignored) {
             // The last periodic save is still on disk.
