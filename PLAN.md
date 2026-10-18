@@ -117,10 +117,18 @@ acceptable battery use.
 
 ### Phase 4 — Product polish
 **Goal:** something you'd actually open every morning.
-- [ ] Morning summary screen + trends across nights (store sessions locally).
-- [ ] Smart/sunrise alarm (optional).
-- [ ] Settings: sensitivity, what to flag, retention of clips.
-- [ ] App icon, launch screen, naming, accessibility pass.
+- [x] Morning summary sentence ("You snored for 42 min (9% of 7 h 30 min) in
+      6 episodes, mostly light…").
+- [x] History tab: Snore Score trend (last 14 nights) + list of nights; open
+      any night with its timeline and playable clips; delete with a
+      confirmation. Native: plugin sessions; browser: IndexedDB.
+- [x] Settings: sensitivity (low/normal/high, same presets in every engine),
+      opt-in full-night audio (iOS). Persisted per device.
+- [x] App icon + splash sources (`scripts/make_icons.py` → `assets/`, then
+      `npx @capacitor/assets generate`), web manifest + home-screen icons.
+- [x] Accessibility: tab roles, labelled play buttons, live summary region,
+      chart text alternatives, visible focus.
+- [ ] Smart/sunrise alarm (optional, later).
 
 ### Phase 5 — Ship
 - [ ] Apple Developer ($99) + Google Play ($25).

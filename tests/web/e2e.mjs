@@ -20,7 +20,8 @@ import { fileURLToPath } from "node:url";
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
 const WEB = join(dirname(fileURLToPath(import.meta.url)), "../../web");
-const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css" };
+const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css",
+                ".png": "image/png", ".webmanifest": "application/manifest+json" };
 
 const server = createServer(async (req, res) => {
   const path = join(WEB, decodeURIComponent(req.url.split("?")[0]).replace(/\/$/, "/index.html"));
@@ -71,6 +72,28 @@ async function newPage(initScript) {
   await page.click("#btnStop");
   await page.waitForTimeout(500);
   check((await text(page, "liveState")) === "stopped", "stopped after stop");
+  check(/snor/i.test(await text(page, "scoreSub")), "morning summary sentence shown");
+
+  await page.click("#tabHistory");
+  await page.waitForTimeout(300);
+  const nights = await page.$$("#nightList .night");
+  check(nights.length === 1, `history lists the night (${nights.length})`);
+  await nights[0].click();
+  await page.waitForTimeout(300);
+  check(!(await page.$eval("#viewingBar", (el) => el.hidden)), "opening a night shows it on Tonight");
+  check(/Night of/.test(await text(page, "viewingLabel")), "night is labelled with its date");
+  await page.click("#btnDelete");
+  check(!(await page.$eval("#confirmDelete", (el) => el.hidden)), "delete asks for confirmation");
+  await page.click("#btnDeleteConfirm");
+  await page.waitForTimeout(300);
+  check((await page.$$("#nightList .night")).length === 0, "deleted night is gone from history");
+
+  await page.click("#tabTonight");
+  await page.click("#settings summary");
+  await page.check("#sensHigh");
+  await page.reload();
+  await page.waitForTimeout(300);
+  check(await page.isChecked("#sensHigh"), "sensitivity setting survives a reload");
   check(errors.length === 0, "no page errors" + (errors.length ? ": " + errors.join(" | ") : ""));
   await page.context().close();
 }
@@ -84,7 +107,7 @@ const nativeMock = () => {
   window.webkit = { messageHandlers: { bridge: { postMessage() {} } } };
 
   const state = JSON.parse(sessionStorage.getItem("mock") || "null") ||
-    { recording: false, t: 0, events: [] };
+    { recording: false, t: 0, events: [], saved: [] };
   const persist = () => sessionStorage.setItem("mock", JSON.stringify(state));
   const listeners = {};
   let nextId = 1, timer = null;
@@ -102,7 +125,8 @@ const nativeMock = () => {
     }
     persist();
   };
-  const session = () => ({ id: "20261018-230000", durationS: state.t, noiseFloorDbfs: -55,
+  const session = () => ({ id: "20261018-230000", startedAt: "2026-10-18T23:00:00Z",
+    endedAt: state.recording ? null : "2026-10-19T06:30:00Z", durationS: state.t, noiseFloorDbfs: -55,
     envelope: Array.from({ length: Math.floor(state.t) }, () => -45), events: state.events,
     baseUrl: "file:///docs/Sonora/sessions/20261018-230000/" });
   if (state.recording) timer = setInterval(tick, 50);
@@ -110,13 +134,16 @@ const nativeMock = () => {
   const plugin = {
     start: async () => { Object.assign(state, { recording: true, t: 0, events: [] });
                          persist(); timer = setInterval(tick, 50); return { sessionId: "20261018-230000" }; },
-    stop: async () => { clearInterval(timer); state.recording = false; persist(); return session(); },
+    stop: async () => { clearInterval(timer); state.recording = false;
+                        state.saved = [session()]; persist(); return session(); },
     status: async () => state.recording
       ? { recording: true, sessionId: "20261018-230000", elapsedS: state.t, events: state.events.length }
       : { recording: false },
-    getSession: async () => session(),
-    listSessions: async () => ({ sessions: [] }),
-    deleteSession: async () => ({}),
+    getSession: async ({ id }) => state.recording ? session() : state.saved.find((x) => x.id === id),
+    listSessions: async () => ({ sessions: state.saved.map((x) => ({
+      id: x.id, startedAt: x.startedAt, endedAt: x.endedAt, durationS: x.durationS, eventCount: x.events.length,
+      snoreScore: 42, snorePercent: 12, snoreTimeS: 10, snoreEvents: x.events.length, episodes: 1, weirdSounds: 0 })) }),
+    deleteSession: async ({ id }) => { state.saved = state.saved.filter((x) => x.id !== id); persist(); return {}; },
     removeListener: async () => ({}),
     addListener: (opts, cb) => { (listeners[opts.eventName] ||= []).push(cb); return String(nextId++); },
   };
@@ -160,6 +187,15 @@ const nativeMock = () => {
   check(Number(await text(page, "statEvents")) >= 2, "summary counts snore events");
   const play = await page.$("#eventList .ev-play");
   check(!!play, "stored clips are playable");
+
+  await page.click("#tabHistory");
+  await page.waitForTimeout(300);
+  check((await page.$$("#nightList .night")).length === 1, "native history lists the saved night");
+  await page.click("#nightList .night");
+  await page.waitForTimeout(300);
+  check(!!(await page.$("#eventList .ev-play")), "a saved night's clips are playable");
+  const clipSrcOk = await page.evaluate(() => typeof window.Capacitor.convertFileSrc === "function");
+  check(clipSrcOk, "clip URLs go through convertFileSrc");
   check(errors.length === 0, "no page errors" + (errors.length ? ": " + errors.join(" | ") : ""));
   await page.context().close();
 }

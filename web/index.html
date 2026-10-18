@@ -4,7 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Sonora</title>
-  <link rel="icon" href="data:," />
+  <meta name="theme-color" content="#0d1117" />
+  <link rel="icon" href="icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="icons/icon-180.png" />
+  <link rel="manifest" href="manifest.webmanifest" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -14,53 +17,96 @@
       <p class="tag">Snore &amp; sleep-sound monitor — everything stays on your device</p>
     </header>
 
-    <section class="score-card" id="scoreCard">
-      <div class="score-num"><span id="scoreVal">—</span><span class="score-max">/100</span></div>
-      <div class="score-label">Snore Score</div>
-      <div class="score-sub" id="scoreSub">Press start to begin listening</div>
-    </section>
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button class="tab" role="tab" id="tabTonight" aria-controls="viewTonight" aria-selected="true">Tonight</button>
+      <button class="tab" role="tab" id="tabHistory" aria-controls="viewHistory" aria-selected="false">History</button>
+    </nav>
 
-    <section class="stats" id="stats">
-      <div class="stat"><div class="stat-val" id="statTime">0:00</div><div class="stat-key">time snoring</div></div>
-      <div class="stat"><div class="stat-val" id="statPct">0%</div><div class="stat-key">of session</div></div>
-      <div class="stat"><div class="stat-val" id="statEvents">0</div><div class="stat-key">snore events</div></div>
-      <div class="stat"><div class="stat-val" id="statEpisodes">0</div><div class="stat-key">episodes</div></div>
-    </section>
-
-    <section class="intensity" id="intensity" hidden>
-      <div class="int-row">
-        <span class="int-cell" data-k="quiet">quiet <b id="iQuiet">0</b></span>
-        <span class="int-cell" data-k="light">light <b id="iLight">0</b></span>
-        <span class="int-cell" data-k="loud">loud <b id="iLoud">0</b></span>
-        <span class="int-cell" data-k="epic">epic <b id="iEpic">0</b></span>
+    <section id="viewTonight" role="tabpanel" aria-labelledby="tabTonight" class="view">
+      <div class="viewing" id="viewingBar" hidden>
+        <span id="viewingLabel"></span>
+        <span class="viewing-actions">
+          <button class="btn small" id="btnBack">Back to tonight</button>
+          <button class="btn small danger" id="btnDelete">Delete night</button>
+        </span>
       </div>
-    </section>
-
-    <section class="live">
-      <div class="meter"><div class="meter-fill" id="meterFill"></div><div class="meter-thresh" id="meterThresh"></div></div>
-      <div class="live-row">
-        <span id="liveState" class="dot-idle">idle</span>
-        <span id="liveFloor">floor —</span>
-        <span id="liveClock">0:00</span>
+      <div class="confirm" id="confirmDelete" hidden>
+        <span>Delete this night and its clips? This can't be undone.</span>
+        <span class="viewing-actions">
+          <button class="btn small" id="btnDeleteCancel">Keep it</button>
+          <button class="btn small danger" id="btnDeleteConfirm">Delete</button>
+        </span>
       </div>
+
+      <section class="score-card" id="scoreCard">
+        <div class="score-num"><span id="scoreVal">—</span><span class="score-max">/100</span></div>
+        <div class="score-label">Snore Score</div>
+        <p class="score-sub" id="scoreSub" aria-live="polite">Press start to begin listening</p>
+      </section>
+
+      <section class="stats" id="stats">
+        <div class="stat"><div class="stat-val" id="statTime">0:00</div><div class="stat-key">time snoring</div></div>
+        <div class="stat"><div class="stat-val" id="statPct">0%</div><div class="stat-key">of the night</div></div>
+        <div class="stat"><div class="stat-val" id="statEvents">0</div><div class="stat-key">snores</div></div>
+        <div class="stat"><div class="stat-val" id="statEpisodes">0</div><div class="stat-key">episodes</div></div>
+      </section>
+
+      <section class="intensity" id="intensity" hidden>
+        <div class="int-row">
+          <span class="int-cell" data-k="quiet">quiet <b id="iQuiet">0</b></span>
+          <span class="int-cell" data-k="light">light <b id="iLight">0</b></span>
+          <span class="int-cell" data-k="loud">loud <b id="iLoud">0</b></span>
+          <span class="int-cell" data-k="epic">epic <b id="iEpic">0</b></span>
+        </div>
+      </section>
+
+      <section class="live" id="live">
+        <div class="meter" aria-hidden="true"><div class="meter-fill" id="meterFill"></div><div class="meter-thresh" id="meterThresh"></div></div>
+        <div class="live-row">
+          <span id="liveState" class="dot-idle">idle</span>
+          <span id="liveFloor">floor —</span>
+          <span id="liveClock">0:00</span>
+        </div>
+      </section>
+
+      <canvas id="timeline" class="timeline" width="800" height="150" role="img" aria-label="Timeline of the night: snores and other sounds"></canvas>
+      <div class="legend">
+        <span data-k="quiet">quiet</span><span data-k="light">light</span>
+        <span data-k="loud">loud</span><span data-k="epic">epic</span>
+        <span data-k="other">other sound</span>
+      </div>
+
+      <div class="controls" id="controls">
+        <button id="btnStart" class="btn primary">Start listening</button>
+        <button id="btnStop" class="btn" hidden>Stop</button>
+        <button id="btnExport" class="btn ghost" hidden>Export JSON</button>
+      </div>
+
+      <details class="settings" id="settings">
+        <summary>Settings</summary>
+        <fieldset id="sensitivity">
+          <legend>Sensitivity</legend>
+          <label><input type="radio" name="sens" value="low" id="sensLow" /> Low <small>— noisy room, fan or partner</small></label>
+          <label><input type="radio" name="sens" value="normal" id="sensNormal" /> Normal</label>
+          <label><input type="radio" name="sens" value="high" id="sensHigh" /> High <small>— quiet room, soft snoring</small></label>
+        </fieldset>
+        <label class="check" id="fullRow" hidden>
+          <input type="checkbox" id="optFull" />
+          Keep the whole night's audio <small>— about 115 MB per 8 hours, stays on this phone</small>
+        </label>
+        <p class="hint" id="settingsHint">Changes apply from the next session.</p>
+      </details>
+
+      <section class="events">
+        <h2>Sounds</h2>
+        <ul id="eventList" class="event-list"><li class="empty">No sounds yet.</li></ul>
+      </section>
     </section>
 
-    <canvas id="timeline" class="timeline" width="800" height="150" aria-label="Night sound timeline"></canvas>
-    <div class="legend">
-      <span data-k="quiet">quiet</span><span data-k="light">light</span>
-      <span data-k="loud">loud</span><span data-k="epic">epic</span>
-      <span data-k="other">other sound</span>
-    </div>
-
-    <div class="controls">
-      <button id="btnStart" class="btn primary">Start listening</button>
-      <button id="btnStop" class="btn" hidden>Stop</button>
-      <button id="btnExport" class="btn ghost" hidden>Export JSON</button>
-    </div>
-
-    <section class="events">
-      <h2>Recent sounds</h2>
-      <ul id="eventList" class="event-list"><li class="empty">No sounds yet.</li></ul>
+    <section id="viewHistory" role="tabpanel" aria-labelledby="tabHistory" class="view" hidden>
+      <h2>Snore Score by night</h2>
+      <canvas id="trend" class="trend" width="800" height="180" role="img" aria-label="Snore Score for recent nights"></canvas>
+      <ul id="nightList" class="night-list"><li class="empty">No nights saved yet. Record one from the Tonight tab.</li></ul>
     </section>
 
     <p class="note" id="note"></p>

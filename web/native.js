@@ -28,6 +28,12 @@ export function getNativeRecorder() {
   return nativePromise;
 }
 
+// "ios", "android" or "web".
+export async function platform() {
+  const core = await loadCore();
+  return core ? core.Capacitor.getPlatform() : "web";
+}
+
 // File URL of a stored clip -> URL the WebView can load.
 export function clipUrl(baseUrl, clip) {
   const file = baseUrl.replace(/\/?$/, "/") + clip;

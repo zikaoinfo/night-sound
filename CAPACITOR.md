@@ -66,6 +66,15 @@ work on both.
 
 ---
 
+## App icon and splash screen
+
+Sources live in `assets/` (drawn by `scripts/make_icons.py`). Generate every
+iOS/Android size from them once the native projects exist:
+
+```bash
+npx @capacitor/assets generate --iconBackgroundColor '#0d1117' --splashBackgroundColor '#f3f5fa' --splashBackgroundColorDark '#0b0e16'
+```
+
 ## Info.plist keys
 
 Open `ios/App/App/Info.plist` in Xcode and add:

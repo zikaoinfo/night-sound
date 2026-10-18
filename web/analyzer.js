@@ -18,6 +18,13 @@ export const CFG = {
   noiseWindowS: 90,         // how much recent audio informs the noise floor
 };
 
+// Same presets as the native plugins (start({ sensitivity })).
+export const SENSITIVITY = {
+  low:    { threshOverFloorDb: 12, snoreThreshold: 0.6 },
+  normal: { threshOverFloorDb: 9,  snoreThreshold: 0.5 },
+  high:   { threshOverFloorDb: 6,  snoreThreshold: 0.4 },
+};
+
 const EPS = 1e-10;
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 
@@ -78,7 +85,10 @@ function snoreProbability(ev) {
 }
 
 export class SnoreAnalyzer {
-  constructor({ sampleRate, fftSize, recorder, snoreThreshold = 0.5, onEvent = null }) {
+  constructor({ sampleRate, fftSize, recorder, sensitivity = "normal", onEvent = null }) {
+    const s = SENSITIVITY[sensitivity] || SENSITIVITY.normal;
+    this.threshOverFloorDb = s.threshOverFloorDb;
+    const snoreThreshold = s.snoreThreshold;
     this.sr = sampleRate;
     this.fftSize = fftSize;
     this.recorder = recorder;
@@ -107,7 +117,7 @@ export class SnoreAnalyzer {
   }
 
   get threshold() {
-    return Math.max(this.noiseFloor + CFG.threshOverFloorDb, CFG.absFloorDbfs);
+    return Math.max(this.noiseFloor + this.threshOverFloorDb, CFG.absFloorDbfs);
   }
 
   // Called ~every frameS seconds with the current time-domain + frequency data.
