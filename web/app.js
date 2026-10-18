@@ -1,17 +1,17 @@
-// app.js — UI wiring: mic capture, the frame loop, live display, timeline,
-// event list with playback, export. All on-device.
+// app.js — UI wiring. One UI, two audio sources:
+//   WebSource    — Web Audio in a browser (records while the page is open)
+//   NativeSource — the SonoraRecorder plugin inside the iOS/Android app
+//                  (records all night with the screen locked)
+// Both produce the same event objects, so rendering doesn't care which ran.
 
 import { RingRecorder, encodeWav } from "./recorder.js";
-import { SnoreAnalyzer, CFG } from "./analyzer.js";
+import { SnoreAnalyzer, CFG, computeReport } from "./analyzer.js";
+import { getNativeRecorder, clipUrl } from "./native.js";
 
 const $ = (id) => document.getElementById(id);
 const COLORS = {
   quiet: "#8ecae6", light: "#4895ef", loud: "#fb8500", epic: "#ef233c", other: "#9b5de5",
 };
-
-let audioCtx, analyser, stream, recorder, analyzer, source;
-let frameTimer = null, uiTimer = null, wakeLock = null;
-let running = false;
 
 const fmt = (s) => {
   s = Math.max(0, Math.round(s));
@@ -20,78 +20,233 @@ const fmt = (s) => {
            : `${m}:${String(ss).padStart(2, "0")}`;
 };
 
-async function start() {
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
-    });
-  } catch (err) {
-    $("note").textContent =
-      "Microphone blocked: " + err.message +
-      ". The page needs HTTPS (or localhost) and mic permission.";
-    return;
+// ---------------------------------------------------------------- sources
+
+class WebSource {
+  constructor(onChange, onLevel) {
+    this.onChange = onChange;
+    this.onLevel = onLevel;
+    this.native = false;
   }
 
-  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  if (audioCtx.state === "suspended") await audioCtx.resume();
-  source = audioCtx.createMediaStreamSource(stream);
+  async start() {
+    this.stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+    });
+    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (this.ctx.state === "suspended") await this.ctx.resume();
+    const source = this.ctx.createMediaStreamSource(this.stream);
+    const analyser = this.ctx.createAnalyser();
+    analyser.fftSize = 4096;
+    analyser.smoothingTimeConstant = 0;
+    source.connect(analyser);
+    this.recorder = new RingRecorder(this.ctx, 20);
+    this.recorder.connect(source);
+    this.analyzer = new SnoreAnalyzer({
+      sampleRate: this.ctx.sampleRate, fftSize: analyser.fftSize,
+      recorder: this.recorder, onEvent: () => this.onChange(),
+    });
+    const timeData = new Float32Array(analyser.fftSize);
+    const freqDb = new Float32Array(analyser.frequencyBinCount);
+    this.timer = setInterval(() => {
+      analyser.getFloatTimeDomainData(timeData);
+      analyser.getFloatFrequencyData(freqDb);
+      const info = this.analyzer.pushFrame(this.ctx.currentTime, timeData, freqDb);
+      this.onLevel({ t: info.t, db: info.db, floor: info.floor, threshold: info.threshold });
+    }, CFG.frameS * 1000);
+  }
 
-  analyser = audioCtx.createAnalyser();
-  analyser.fftSize = 4096;
-  analyser.smoothingTimeConstant = 0;
-  source.connect(analyser);
+  async stop() {
+    clearInterval(this.timer);
+    this.analyzer.flush(this.ctx.currentTime);
+    this.duration = this.ctx.currentTime - (this.analyzer.startTime ?? this.ctx.currentTime);
+    this.recorder.disconnect();
+    this.stream.getTracks().forEach((t) => t.stop());
+    await this.ctx.close();
+  }
 
-  recorder = new RingRecorder(audioCtx, 20);
-  recorder.connect(source);
+  snapshot() {
+    if (!this.analyzer) return null;
+    const live = this.ctx && this.ctx.state !== "closed" && this.analyzer.startTime !== null;
+    return {
+      events: this.analyzer.events,
+      envelope: this.analyzer.envelope,
+      durationS: live ? this.ctx.currentTime - this.analyzer.startTime : this.duration || 0,
+      noiseFloorDbfs: this.analyzer.noiseFloor,
+    };
+  }
 
-  analyzer = new SnoreAnalyzer({
-    sampleRate: audioCtx.sampleRate,
-    fftSize: analyser.fftSize,
-    recorder,
-    onEvent: () => renderEvents(),
-  });
+  clipSrc(ev) {
+    return ev.clip instanceof Float32Array
+      ? URL.createObjectURL(encodeWav(ev.clip, this.analyzer.sr)) : null;
+  }
+}
 
-  const timeData = new Float32Array(analyser.fftSize);
-  const freqDb = new Float32Array(analyser.frequencyBinCount);
+class NativeSource {
+  constructor(plugin, onChange, onLevel) {
+    this.plugin = plugin;
+    this.onChange = onChange;
+    this.onLevel = onLevel;
+    this.native = true;
+    this.reset();
+  }
 
-  frameTimer = setInterval(() => {
-    analyser.getFloatTimeDomainData(timeData);
-    analyser.getFloatFrequencyData(freqDb);
-    const info = analyzer.pushFrame(audioCtx.currentTime, timeData, freqDb);
-    updateMeter(info);
-  }, CFG.frameS * 1000);
+  reset() {
+    this.events = new Map();     // keyed by start time: resume can replay events
+    this.savedEnvelope = [];
+    this.liveEnvelope = [];
+    this.durationS = 0;
+    this.noiseFloor = -50;
+    this.baseUrl = "";
+  }
 
-  uiTimer = setInterval(updateUI, 1000);
+  async listen() {
+    if (this.handles) return;
+    this.handles = [
+      await this.plugin.addListener("soundEvent", (ev) => { this.addEvent(ev); this.onChange(); }),
+      await this.plugin.addListener("level", (l) => {
+        this.durationS = Math.max(this.durationS, l.t);
+        this.noiseFloor = l.floor;
+        this.liveEnvelope.push({ t: l.t, db: l.db });
+        this.onLevel(l);
+      }),
+    ];
+  }
 
-  await requestWakeLock();
-  document.addEventListener("visibilitychange", onVisibility);
+  async unlisten() {
+    for (const h of this.handles || []) await h.remove();
+    this.handles = null;
+  }
 
-  running = true;
-  $("btnStart").hidden = true;
-  $("btnStop").hidden = false;
-  $("btnExport").hidden = false;
-  $("intensity").hidden = false;
-  $("liveState").textContent = "listening";
-  $("liveState").className = "rec";
-  $("scoreSub").textContent = "Listening… keep the screen on (plug in for a full night).";
+  addEvent(ev) { this.events.set(ev.startS.toFixed(2), ev); }
+
+  load(session) {
+    this.events = new Map();
+    session.events.forEach((e) => this.addEvent(e));
+    this.savedEnvelope = session.envelope.map((db, i) => ({ t: i + 1, db }));
+    this.liveEnvelope = this.liveEnvelope.filter((p) => p.t > this.savedEnvelope.length);
+    this.durationS = Math.max(this.durationS, session.durationS);
+    this.noiseFloor = session.noiseFloorDbfs;
+    this.baseUrl = session.baseUrl;
+  }
+
+  async start(opts) {
+    this.reset();
+    await this.listen();
+    const { sessionId } = await this.plugin.start(opts);
+    this.sessionId = sessionId;
+  }
+
+  async stop() {
+    const session = await this.plugin.stop();
+    await this.unlisten();
+    this.liveEnvelope = [];
+    this.load(session);
+  }
+
+  // After the app comes back to the foreground (or relaunches mid-night),
+  // pick up whatever the plugin recorded while the web view was asleep.
+  async resume() {
+    const st = await this.plugin.status();
+    if (!st.recording) return false;
+    await this.listen();
+    this.sessionId = st.sessionId;
+    this.load(await this.plugin.getSession({ id: st.sessionId }));
+    this.durationS = Math.max(this.durationS, st.elapsedS);
+    return true;
+  }
+
+  snapshot() {
+    return {
+      events: [...this.events.values()].sort((a, b) => a.startS - b.startS),
+      envelope: this.savedEnvelope.concat(this.liveEnvelope),
+      durationS: this.durationS,
+      noiseFloorDbfs: this.noiseFloor,
+    };
+  }
+
+  clipSrc(ev) {
+    return typeof ev.clip === "string" && this.baseUrl ? clipUrl(this.baseUrl, ev.clip) : null;
+  }
+}
+
+// ---------------------------------------------------------------- state
+
+let source = null;
+let running = false;
+let uiTimer = null;
+let wakeLock = null;
+
+async function makeSource() {
+  const native = await getNativeRecorder();
+  return native
+    ? new NativeSource(native.plugin, () => renderEvents(), updateMeter)
+    : new WebSource(() => renderEvents(), updateMeter);
+}
+
+async function start() {
+  $("note").textContent = "";
+  try {
+    source = await makeSource();
+    await source.start({ sensitivity: "normal" });
+  } catch (err) {
+    $("note").textContent = source && source.native
+      ? "Couldn't start: " + (err.message || err)
+      : "Microphone blocked: " + (err.message || err) +
+        ". The page needs HTTPS (or localhost) and mic permission.";
+    return;
+  }
+  setRunning(true);
+  if (!source.native) await requestWakeLock();
 }
 
 async function stop() {
-  running = false;
-  clearInterval(frameTimer); clearInterval(uiTimer);
-  if (analyzer && audioCtx) analyzer.flush(audioCtx.currentTime);
-  document.removeEventListener("visibilitychange", onVisibility);
+  setRunning(false);
+  try { await source.stop(); } catch (err) { $("note").textContent = "Stop failed: " + (err.message || err); }
   await releaseWakeLock();
-  if (recorder) recorder.disconnect();
-  if (stream) stream.getTracks().forEach((t) => t.stop());
-  if (audioCtx) await audioCtx.close();
-  updateUI();
-  renderEvents();
-  $("btnStart").hidden = false;
-  $("btnStop").hidden = true;
-  $("liveState").textContent = "stopped";
-  $("liveState").className = "dot-idle";
+  render();
   $("scoreSub").textContent = "Session finished. Review your sounds below or export.";
+}
+
+function setRunning(on) {
+  running = on;
+  clearInterval(uiTimer);
+  if (on) uiTimer = setInterval(render, 1000);
+  $("btnStart").hidden = on;
+  $("btnStop").hidden = !on;
+  $("btnExport").hidden = false;
+  $("intensity").hidden = false;
+  $("liveState").textContent = on ? "listening" : "stopped";
+  $("liveState").className = on ? "rec" : "dot-idle";
+  if (on) {
+    $("scoreSub").textContent = source.native
+      ? "Listening. You can lock the screen — Sonora keeps recording."
+      : "Listening… keep the screen on (plug in for a full night).";
+  }
+}
+
+// ---------------------------------------------------------------- render
+
+function currentReport() {
+  const snap = source && source.snapshot();
+  return snap ? { snap, report: computeReport(snap) } : null;
+}
+
+function render() {
+  const cur = currentReport();
+  if (!cur) return;
+  const r = cur.report;
+  $("scoreVal").textContent = Math.round(r.snoreScore);
+  $("statTime").textContent = fmt(r.snoreTimeS);
+  $("statPct").textContent = r.snorePercent.toFixed(0) + "%";
+  $("statEvents").textContent = r.snoreEvents;
+  $("statEpisodes").textContent = r.episodes.length;
+  $("iQuiet").textContent = r.intensityCounts.quiet;
+  $("iLight").textContent = r.intensityCounts.light;
+  $("iLoud").textContent = r.intensityCounts.loud;
+  $("iEpic").textContent = r.intensityCounts.epic;
+  if (!running) $("liveClock").textContent = fmt(r.durationS);
+  drawTimeline(cur.snap, r);
 }
 
 function updateMeter(info) {
@@ -104,23 +259,7 @@ function updateMeter(info) {
   $("liveClock").textContent = fmt(info.t);
 }
 
-function updateUI() {
-  if (!analyzer || !audioCtx) return;
-  const r = analyzer.report(audioCtx.currentTime);
-  $("scoreVal").textContent = Math.round(r.snoreScore);
-  $("statTime").textContent = fmt(r.snoreTimeS);
-  $("statPct").textContent = r.snorePercent.toFixed(0) + "%";
-  $("statEvents").textContent = r.snoreEvents;
-  $("statEpisodes").textContent = r.episodes.length;
-  $("iQuiet").textContent = r.intensityCounts.quiet;
-  $("iLight").textContent = r.intensityCounts.light;
-  $("iLoud").textContent = r.intensityCounts.loud;
-  $("iEpic").textContent = r.intensityCounts.epic;
-  drawTimeline(r);
-  try { localStorage.setItem("nightsound:last", JSON.stringify(stripReport(r))); } catch (_) {}
-}
-
-function drawTimeline(r) {
+function drawTimeline(snap, r) {
   const cv = $("timeline");
   const dpr = window.devicePixelRatio || 1;
   const w = cv.clientWidth, h = cv.clientHeight;
@@ -134,13 +273,11 @@ function drawTimeline(r) {
   const bottom = floor - 10, top = 0;
   const yOf = (db) => h - Math.max(0, Math.min(1, (db - bottom) / (top - bottom))) * (h - 10) - 5;
 
-  // threshold guide
   ctx.strokeStyle = getToken("--line"); ctx.lineWidth = 1;
   ctx.beginPath(); const ty = yOf(floor + CFG.threshOverFloorDb);
   ctx.moveTo(0, ty); ctx.lineTo(w, ty); ctx.stroke();
 
-  // envelope
-  const env = analyzer.envelope;
+  const env = snap.envelope;
   if (env.length > 1) {
     ctx.strokeStyle = getToken("--muted"); ctx.globalAlpha = 0.5; ctx.beginPath();
     const step = Math.max(1, Math.floor(env.length / w));
@@ -151,8 +288,7 @@ function drawTimeline(r) {
     ctx.stroke(); ctx.globalAlpha = 1;
   }
 
-  // events
-  for (const e of analyzer.events) {
+  for (const e of snap.events) {
     const x0 = (e.startS / dur) * w, x1 = Math.max(x0 + 2, (e.endS / dur) * w);
     if (e.isSnore) {
       ctx.fillStyle = COLORS[e.intensity] || COLORS.light;
@@ -171,7 +307,8 @@ function getToken(name) {
 
 function renderEvents() {
   const ul = $("eventList");
-  const recent = analyzer.events.slice(-30).reverse();
+  const snap = source && source.snapshot();
+  const recent = snap ? snap.events.slice(-30).reverse() : [];
   if (!recent.length) { ul.innerHTML = '<li class="empty">No sounds yet.</li>'; return; }
   ul.innerHTML = "";
   for (const e of recent) {
@@ -185,6 +322,7 @@ function renderEvents() {
     if (e.clip) {
       const btn = document.createElement("button");
       btn.className = "ev-play"; btn.textContent = "▶";
+      btn.setAttribute("aria-label", "Play this sound");
       btn.onclick = () => playClip(e);
       li.appendChild(btn);
     }
@@ -193,22 +331,20 @@ function renderEvents() {
 }
 
 function playClip(e) {
-  if (!e.clip) return;
-  const blob = encodeWav(e.clip, analyzer.sr);
-  const url = URL.createObjectURL(blob);
-  const a = new Audio(url);
-  a.play();
-  a.onended = () => URL.revokeObjectURL(url);
-}
-
-function stripReport(r) {
-  return { ...r, generatedAt: new Date().toISOString() };
+  const src = source.clipSrc(e);
+  if (!src) return;
+  const a = new Audio(src);
+  a.play().catch((err) => { $("note").textContent = "Couldn't play that clip: " + err.message; });
+  if (src.startsWith("blob:")) a.onended = () => URL.revokeObjectURL(src);
 }
 
 function exportJson() {
-  const r = analyzer.report(audioCtx ? audioCtx.currentTime : (analyzer.startTime || 0));
-  const events = analyzer.events.map(({ clip, ...rest }) => rest);
-  const blob = new Blob([JSON.stringify({ ...stripReport(r), events }, null, 2)],
+  const cur = currentReport();
+  if (!cur) return;
+  const events = cur.snap.events.map(({ clip, ...rest }) =>
+    (typeof clip === "string" ? { ...rest, clip } : rest));
+  const blob = new Blob([JSON.stringify(
+    { ...cur.report, generatedAt: new Date().toISOString(), events }, null, 2)],
     { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -217,6 +353,8 @@ function exportJson() {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+// ---------------------------------------------------------------- wake lock / resume
+
 async function requestWakeLock() {
   try { if ("wakeLock" in navigator) wakeLock = await navigator.wakeLock.request("screen"); }
   catch (_) {}
@@ -224,14 +362,29 @@ async function requestWakeLock() {
 async function releaseWakeLock() {
   try { if (wakeLock) { await wakeLock.release(); wakeLock = null; } } catch (_) {}
 }
-function onVisibility() {
-  if (document.visibilityState === "visible" && running) requestWakeLock();
-}
+
+document.addEventListener("visibilitychange", async () => {
+  if (document.visibilityState !== "visible" || !running) return;
+  if (source.native) { await source.resume(); render(); renderEvents(); }
+  else requestWakeLock();
+});
+
+// If the app was closed mid-night, reattach to the running native session.
+(async () => {
+  const native = await getNativeRecorder();
+  if (!native) return;
+  const s = new NativeSource(native.plugin, () => renderEvents(), updateMeter);
+  if (await s.resume()) {
+    source = s;
+    setRunning(true);
+    render(); renderEvents();
+  }
+})();
 
 $("btnStart").addEventListener("click", start);
 $("btnStop").addEventListener("click", stop);
 $("btnExport").addEventListener("click", exportJson);
 
 $("note").textContent =
-  "Tip: keep the screen on and the phone plugged in near the bed. Pure web pauses the mic when the " +
-  "screen sleeps — the native (app-store) build records all night in the background. Nothing is uploaded.";
+  "Tip: keep the phone near the bed and plugged in. In the Sonora app you can lock the screen; " +
+  "in a browser the screen has to stay on. Nothing is uploaded.";

@@ -197,57 +197,69 @@ export class SnoreAnalyzer {
   }
 
   episodes() {
-    const snores = this.events.filter((e) => e.isSnore);
-    const eps = [];
-    let run = [];
-    const flush = () => {
-      if (run.length >= 3) {
-        const iv = [];
-        for (let i = 1; i < run.length; i++) iv.push(run[i].startS - run[i - 1].startS);
-        run.forEach((e) => (e.inEpisode = true));
-        eps.push({
-          startS: run[0].startS, endS: run[run.length - 1].endS,
-          snores: run.length,
-          meanIntervalS: iv.reduce((a, b) => a + b, 0) / iv.length,
-        });
-      }
-      run = [];
-    };
-    for (const e of snores) {
-      if (!run.length) { run.push(e); continue; }
-      const gap = e.startS - run[run.length - 1].startS;
-      if (gap >= CFG.breathMinS && gap <= CFG.breathMaxS) run.push(e);
-      else { flush(); run.push(e); }
-    }
-    flush();
-    return eps;
+    return episodesOf(this.events);
   }
 
   report(nowSec) {
     const duration = this.startTime === null ? 0 : nowSec - this.startTime;
-    const snores = this.events.filter((e) => e.isSnore);
-    const snoreTime = snores.reduce((a, e) => a + e.durationS, 0);
-    const counts = { quiet: 0, light: 0, loud: 0, epic: 0 };
-    snores.forEach((e) => (counts[e.intensity]++));
-
-    const pct = duration ? (100 * snoreTime) / duration : 0;
-    const loud = counts.loud + 2 * counts.epic;
-    const loudFrac = loud / Math.max(snores.length, 1);
-    const score = 100 * (0.65 * (Math.min(pct, 60) / 60) + 0.35 * loudFrac);
-
-    return {
-      durationS: duration,
-      noiseFloorDbfs: this.noiseFloor,
-      snoreEvents: snores.length,
-      snoreTimeS: snoreTime,
-      snorePercent: pct,
-      snoresPerHour: duration ? snores.length / (duration / 3600) : 0,
-      snoreScore: score,
-      intensityCounts: counts,
-      episodes: this.episodes(),
-      weirdSounds: this.events
-        .filter((e) => !e.isSnore && (e.intensity === "loud" || e.intensity === "epic"))
-        .map((e) => ({ startS: e.startS, peakDbfs: e.peakDbfs, intensity: e.intensity, centroid: e.centroid })),
-    };
+    return computeReport({ events: this.events, durationS: duration, noiseFloorDbfs: this.noiseFloor });
   }
+}
+
+// Rhythmic snoring runs: >= 3 snores spaced at breathing rate.
+export function episodesOf(events) {
+  const snores = events.filter((e) => e.isSnore);
+  const eps = [];
+  let run = [];
+  const flush = () => {
+    if (run.length >= 3) {
+      const iv = [];
+      for (let i = 1; i < run.length; i++) iv.push(run[i].startS - run[i - 1].startS);
+      run.forEach((e) => (e.inEpisode = true));
+      eps.push({
+        startS: run[0].startS, endS: run[run.length - 1].endS,
+        snores: run.length,
+        meanIntervalS: iv.reduce((a, b) => a + b, 0) / iv.length,
+      });
+    }
+    run = [];
+  };
+  for (const e of snores) {
+    if (!run.length) { run.push(e); continue; }
+    const gap = e.startS - run[run.length - 1].startS;
+    if (gap >= CFG.breathMinS && gap <= CFG.breathMaxS) run.push(e);
+    else { flush(); run.push(e); }
+  }
+  flush();
+  return eps;
+}
+
+// Session aggregates from a list of events. Used for live web sessions and
+// for sessions recorded by the native plugin.
+export function computeReport({ events, durationS, noiseFloorDbfs }) {
+  const duration = durationS || 0;
+  const snores = events.filter((e) => e.isSnore);
+  const snoreTime = snores.reduce((a, e) => a + e.durationS, 0);
+  const counts = { quiet: 0, light: 0, loud: 0, epic: 0 };
+  snores.forEach((e) => (counts[e.intensity]++));
+
+  const pct = duration ? (100 * snoreTime) / duration : 0;
+  const loud = counts.loud + 2 * counts.epic;
+  const loudFrac = loud / Math.max(snores.length, 1);
+  const score = 100 * (0.65 * (Math.min(pct, 60) / 60) + 0.35 * loudFrac);
+
+  return {
+    durationS: duration,
+    noiseFloorDbfs,
+    snoreEvents: snores.length,
+    snoreTimeS: snoreTime,
+    snorePercent: pct,
+    snoresPerHour: duration ? snores.length / (duration / 3600) : 0,
+    snoreScore: score,
+    intensityCounts: counts,
+    episodes: episodesOf(events),
+    weirdSounds: events
+      .filter((e) => !e.isSnore && (e.intensity === "loud" || e.intensity === "epic"))
+      .map((e) => ({ startS: e.startS, peakDbfs: e.peakDbfs, intensity: e.intensity, centroid: e.centroid })),
+  };
 }

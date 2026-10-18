@@ -3,10 +3,6 @@
   "appName": "Sonora",
   "webDir": "web",
   "ios": {
-    "contentInset": "always",
-    "limitsNavigationsToAppBoundDomains": false
-  },
-  "server": {
-    "iosScheme": "https"
+    "contentInset": "always"
   }
 }

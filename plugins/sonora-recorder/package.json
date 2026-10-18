@@ -1,0 +1,15 @@
+{
+  "name": "sonora-recorder",
+  "version": "0.1.0",
+  "description": "Sonora native recorder: all-night background audio capture and on-device snore detection.",
+  "private": true,
+  "license": "MIT",
+  "files": ["ios/", "android/", "Package.swift", "SonoraRecorder.podspec"],
+  "capacitor": {
+    "ios": { "src": "ios" },
+    "android": { "src": "android" }
+  },
+  "peerDependencies": {
+    "@capacitor/core": "^8.0.0"
+  }
+}

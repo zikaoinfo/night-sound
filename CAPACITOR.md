@@ -4,15 +4,13 @@ This wraps the `web/` app into a native iOS (and Android) app. You install it
 from Xcode onto your own device — **no $99 account needed for that**; a free
 Apple ID signs it with a 7-day certificate (re-run from Xcode to renew).
 
-## Two milestones
+## What runs where
 
-1. **Foreground app (this scaffold).** The web app running as a real native
-   app on your iPhone/iPad. The mic works while the app is open. This is the
-   quickest way to feel it as an app and test detection on-device.
-2. **All-night background recording (next step).** Needs a small native Swift
-   plugin (AVAudioEngine) plus the `audio` background mode, because iOS
-   suspends a WebView's JS timers and mic when the screen locks. Design notes
-   at the bottom — tell me when milestone 1 runs and I'll build it.
+Inside the app, recording is done by the native **SonoraRecorder** plugin
+(`plugins/sonora-recorder/`), not the WebView: it keeps the microphone running
+all night with the screen locked, detects events natively, and saves them.
+The web UI shows the results and reloads them whenever you open the app.
+In a plain browser the same UI falls back to Web Audio (screen must stay on).
 
 ---
 
@@ -91,25 +89,30 @@ a store; for local device testing anything unique works.
 
 ---
 
-## Milestone 2 — background recording (design)
+## The native recorder (`plugins/sonora-recorder`)
 
-The honest constraint: a WKWebView's `getUserMedia` stream and JS `setInterval`
-loop are suspended when the app backgrounds or the screen locks, so the current
-`analyzer.js` loop stalls overnight even with the `audio` background mode.
+- `NightRecorder.swift` — `AVAudioSession` (`.playAndRecord`, `.measurement`
+  mode so iOS doesn't apply voice processing, `.mixWithOthers`) and an
+  `AVAudioEngine` input tap, resampled to 16 kHz mono. With the `audio`
+  background mode it keeps recording while the screen is locked. Restarts
+  itself after phone calls, alarms and route changes.
+- `SnoreEngine.swift` — the same detection pipeline as `analyzer.js` and the
+  Python engine (envelope → adaptive noise floor → events → spectral features
+  via Accelerate → snore probability), so all three agree.
+- Saves to `Documents/Sonora/sessions/<id>/`: `session.json` (events, per-second
+  loudness, summary — rewritten every 30 s, so a crash loses at most 30 s),
+  short WAV clips (the 60 loudest snores plus every notable other sound), and
+  `full.m4a` only if full-night recording is turned on.
+- Wired up automatically by `npx cap sync` (Swift Package Manager).
 
-The fix is a native capture layer:
+### Checking it on your iPhone
 
-- A Capacitor plugin (Swift) configures `AVAudioSession` as `.playAndRecord`
-  with `.mixWithOthers`, activates it, and installs a tap on `AVAudioEngine`'s
-  input node. With `UIBackgroundModes: audio`, that keeps the mic alive with
-  the screen off.
-- Run the detection **natively** (port the small feature/scoring math from
-  `analyzer.js` to Swift) for battery, and stream events + the loudness
-  envelope back to the JS UI via plugin notifications. The web UI stays the
-  presentation layer; the engine definition (envelope → events → spectral
-  features → rhythm → score) is unchanged.
-- Keep clips the same way — write short WAVs natively when an event fires.
+1. Run the app, tap **Start listening**, allow the microphone.
+2. Lock the phone for a few minutes and make some noise near it.
+3. Unlock and open Sonora: the timeline and sound list fill in with what
+   happened while it was locked.
 
-This is the part that needs iterating on-device (battery, thermals, the audio
-session interacting with alarms/phone calls). It's the real work of a
-SnoreLab-class app, and it's well-scoped from here.
+Things only a real device can tell us (please report back): battery use over
+a full night, whether recording survives an incoming call on your phone, and
+whether the device gets warm. I couldn't compile Swift in the environment
+where this was written, so if Xcode reports a build error, paste it to me.

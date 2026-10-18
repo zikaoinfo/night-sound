@@ -77,13 +77,18 @@ Engine (Python + JS), web app, Capacitor scaffold.
 
 ### Phase 2 — Native background recording (the hard part)
 **Goal:** records reliably all night with the screen off.
-- [ ] Capacitor Swift plugin: `AVAudioSession` (`.playAndRecord`, `.mixWithOthers`),
-      `AVAudioEngine` input tap, `UIBackgroundModes: audio`.
-- [ ] Port the feature/scoring math to Swift, or run detection on buffered PCM
-      the plugin hands to JS on foreground. (Decide: native vs JS analysis —
-      see Open Questions.)
-- [ ] Native short-WAV clip writing on event.
-- [ ] Handle interruptions (phone call, alarm, other audio), thermal/battery.
+- [x] Capacitor Swift plugin `sonora-recorder`: `AVAudioSession`
+      (`.playAndRecord`, `.measurement`, `.mixWithOthers`), `AVAudioEngine`
+      input tap, `UIBackgroundModes: audio` (set by `scripts/setup-ios.sh`).
+- [x] Detection ported to Swift (`SnoreEngine.swift`, Accelerate FFT).
+- [x] Native short-WAV clips (loudest 60 snores + notable other sounds),
+      crash-safe `session.json` every 30 s, opt-in full-night AAC.
+- [x] Restart after interruptions (calls, alarms, route changes).
+- [x] Web UI drives the plugin and reloads the session on resume/relaunch
+      (`web/native.js`, `NativeSource` in `app.js`); e2e-tested with a mock
+      bridge (`tests/web/e2e.mjs`).
+- [ ] **On device:** build in Xcode, measure battery + thermals over a night,
+      confirm recording survives a phone call.
 - [ ] Android equivalent: foreground service + `MediaRecorder`/`AudioRecord`.
 **Done when:** an 8-hour screen-off session captures events accurately with
 acceptable battery use.
