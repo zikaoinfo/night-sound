@@ -28,13 +28,16 @@ final class SessionStore {
     final String startedAt;
     final String sensitivity;
     private final boolean keepClips;
+    private final double startDelayS;
     private JSONObject meta;
     private final List<SnoreEngine.Event> events = new ArrayList<>();
     private final List<Integer> snoreClipIndexes = new ArrayList<>();
     private int clipCounter = 0;
 
-    SessionStore(Context context, String id, String sensitivity, boolean keepClips, String[] tags) {
+    SessionStore(Context context, String id, String sensitivity, boolean keepClips, String[] tags,
+                 double startDelayS) {
         this.id = id;
+        this.startDelayS = startDelayS;
         this.meta = metaJSON(tags, null, null);
         this.dir = new File(root(context), id);
         this.startedAt = iso(new Date());
@@ -116,6 +119,7 @@ final class SessionStore {
         o.put("noiseFloorDbfs", finite(noiseFloor));
         o.put("sensitivity", sensitivity);
         o.put("fullRecording", JSONObject.NULL);
+        o.put("startDelayS", startDelayS);
         JSONArray env = new JSONArray();
         for (float v : envelope) env.put(finite(v));
         o.put("envelope", env);

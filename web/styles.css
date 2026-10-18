@@ -192,3 +192,7 @@ body { margin: 0; background: var(--bg); color: var(--fg); }
 .impact-bar i.better { background: var(--quiet); }
 .impact-bar i.worse { background: var(--loud); }
 .night-tags { grid-column: 1; color: var(--muted); font-size: .74rem; }
+
+.settings .field { margin-top: 12px; flex-wrap: wrap; }
+.settings select { background: var(--panel-2); color: var(--fg); border: 1px solid var(--line); border-radius: 8px;
+  padding: 6px 8px; font: inherit; }

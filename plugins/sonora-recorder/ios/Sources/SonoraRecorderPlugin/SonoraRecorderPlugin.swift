@@ -42,7 +42,8 @@ public class SonoraRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
             sensitivity: call.getString("sensitivity", "normal"),
             fullRecording: call.getBool("fullRecording", false),
             keepClips: call.getBool("keepClips", true),
-            tags: call.getArray("tags", String.self) ?? [])
+            tags: call.getArray("tags", String.self) ?? [],
+            startDelayS: call.getDouble("startDelayS", 0))
         Self.requestMicrophone { granted in
             guard granted else {
                 call.reject("Microphone access is off. Turn it on in Settings > Sonora.", "PERMISSION_DENIED")

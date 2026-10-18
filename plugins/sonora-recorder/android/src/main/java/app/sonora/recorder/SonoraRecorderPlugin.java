@@ -41,6 +41,14 @@ public class SonoraRecorderPlugin extends Plugin {
                 o.put("threshold", threshold);
                 notifyListeners("level", o);
             }
+
+            @Override
+            public void onWaiting(double remainingS) {
+                JSObject o = new JSObject();
+                o.put("t", 0);
+                o.put("waitingS", remainingS);
+                notifyListeners("level", o);
+            }
         });
     }
 
@@ -73,7 +81,8 @@ public class SonoraRecorderPlugin extends Plugin {
             .putExtra("sessionId", id)
             .putExtra("sensitivity", call.getString("sensitivity", "normal"))
             .putExtra("keepClips", call.getBoolean("keepClips", true))
-            .putExtra("tags", stringArray(call.getArray("tags")));
+            .putExtra("tags", stringArray(call.getArray("tags")))
+            .putExtra("startDelayS", call.getDouble("startDelayS") == null ? 0.0 : call.getDouble("startDelayS"));
         ContextCompat.startForegroundService(getContext(), intent);
         JSObject result = new JSObject();
         result.put("sessionId", id);

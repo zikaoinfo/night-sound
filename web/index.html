@@ -123,6 +123,16 @@
           <label><input type="radio" name="sens" value="normal" id="sensNormal" /> Normal</label>
           <label><input type="radio" name="sens" value="high" id="sensHigh" /> High <small>— quiet room, soft snoring</small></label>
         </fieldset>
+        <label class="field" for="startDelay">Start listening after
+          <select id="startDelay">
+            <option value="0">no delay</option>
+            <option value="900">15 min</option>
+            <option value="1800">30 min</option>
+            <option value="2700">45 min</option>
+            <option value="3600">1 hour</option>
+          </select>
+          <small>— so noises while you fall asleep don't count</small>
+        </label>
         <label class="check" id="fullRow" hidden>
           <input type="checkbox" id="optFull" />
           Keep the whole night's audio <small>— about 115 MB per 8 hours, stays on this phone</small>

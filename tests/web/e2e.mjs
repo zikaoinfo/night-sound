@@ -137,6 +137,23 @@ async function newPage(initScript) {
   await page.context().close();
 }
 
+// ------------------------------------------------------------ start delay
+{
+  console.log("start delay (web)");
+  const { page, errors } = await newPage(() =>
+    localStorage.setItem("sonora:settings", JSON.stringify({ startDelayS: 2 })));
+  await page.goto(URL);
+  await page.click("#btnStart");
+  await page.waitForTimeout(600);
+  check((await text(page, "liveState")) === "waiting", "waits during the start delay");
+  check(/starts listening in/i.test(await text(page, "scoreSub")), "shows a countdown");
+  await page.waitForTimeout(2600);
+  check((await text(page, "liveState")) === "listening", "starts listening after the delay");
+  await page.click("#btnStop");
+  check(errors.length === 0, "no page errors" + (errors.length ? ": " + errors.join(" | ") : ""));
+  await page.context().close();
+}
+
 // ------------------------------------------------------------ native mode
 // Mock of what the iOS shell injects before the page loads.
 const nativeMock = () => {

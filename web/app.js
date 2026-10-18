@@ -38,7 +38,7 @@ const fmtNight = (iso) => new Date(iso).toLocaleString(undefined,
 
 const SETTINGS_KEY = "sonora:settings";
 function loadSettings() {
-  const defaults = { sensitivity: "normal", fullRecording: false, nextTags: [], customTags: [] };
+  const defaults = { sensitivity: "normal", fullRecording: false, startDelayS: 0, nextTags: [], customTags: [] };
   try { return { ...defaults, ...JSON.parse(localStorage.getItem(SETTINGS_KEY)) }; }
   catch (_) { return defaults; }
 }
@@ -61,6 +61,7 @@ class WebSource {
       audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
     });
     this.startedAt = new Date();
+    this.listenFrom = Date.now() + (opts.startDelayS || 0) * 1000;
     this.ctx = new (window.AudioContext || window.webkitAudioContext)();
     if (this.ctx.state === "suspended") await this.ctx.resume();
     const source = this.ctx.createMediaStreamSource(this.stream);
@@ -77,6 +78,8 @@ class WebSource {
     const timeData = new Float32Array(analyser.fftSize);
     const freqDb = new Float32Array(analyser.frequencyBinCount);
     this.timer = setInterval(() => {
+      const wait = (this.listenFrom - Date.now()) / 1000;
+      if (wait > 0) { this.onLevel({ t: 0, waitingS: wait }); return; }
       analyser.getFloatTimeDomainData(timeData);
       analyser.getFloatFrequencyData(freqDb);
       const info = this.analyzer.pushFrame(this.ctx.currentTime, timeData, freqDb);
@@ -134,6 +137,7 @@ class NativeSource {
     this.handles = [
       await this.plugin.addListener("soundEvent", (ev) => { this.addEvent(ev); this.onChange(); }),
       await this.plugin.addListener("level", (l) => {
+        if (l.waitingS > 0) { this.onLevel(l); return; }
         this.durationS = Math.max(this.durationS, l.t);
         this.noiseFloor = l.floor;
         this.liveEnvelope.push({ t: l.t, db: l.db });
@@ -229,7 +233,8 @@ async function start() {
   try {
     source = await makeSource();
     source.meta = normMeta({ tags });
-    await source.start({ sensitivity: settings.sensitivity, fullRecording: settings.fullRecording, tags });
+    await source.start({ sensitivity: settings.sensitivity, fullRecording: settings.fullRecording, tags,
+                         startDelayS: settings.startDelayS });
   } catch (err) {
     $("note").textContent = source && source.native
       ? "Couldn't start: " + (err.message || err)
@@ -265,7 +270,7 @@ function setRunning(on) {
   $("intensity").hidden = false;
   $("liveState").textContent = on ? "listening" : "stopped";
   $("liveState").className = on ? "rec" : "dot-idle";
-  document.querySelectorAll("#settings input").forEach((i) => (i.disabled = on));
+  document.querySelectorAll("#settings input, #settings select").forEach((i) => (i.disabled = on));
   $("settingsHint").textContent = on ? "Settings are locked while recording." : "Changes apply from the next session.";
   if (on) {
     $("scoreSub").textContent = source.native
@@ -322,6 +327,20 @@ function render() {
 
 function updateMeter(info) {
   if (stored) return;
+  if (info.waitingS > 0) {
+    $("liveState").textContent = "waiting";
+    $("liveClock").textContent = "starts in " + fmt(info.waitingS);
+    $("scoreSub").textContent =
+      `Sonora starts listening in ${fmt(info.waitingS)}, so noises while you fall asleep don't count.`;
+    $("meterFill").style.width = "0%";
+    return;
+  }
+  if ($("liveState").textContent === "waiting") {
+    $("liveState").textContent = "listening";
+    $("scoreSub").textContent = source && source.native
+      ? "Listening. You can lock the screen — Sonora keeps recording."
+      : "Listening… keep the screen on (plug in for a full night).";
+  }
   const bottom = (info.floor || -60) - 5, top = 0;
   const pct = Math.max(0, Math.min(100, ((info.db - bottom) / (top - bottom)) * 100));
   $("meterFill").style.width = pct + "%";
@@ -724,6 +743,10 @@ function initSettings() {
   radio.checked = true;
   document.querySelectorAll('input[name="sens"]').forEach((r) =>
     r.addEventListener("change", () => { settings.sensitivity = r.value; saveSettings(); }));
+  $("startDelay").value = String(settings.startDelayS);
+  $("startDelay").addEventListener("change", () => {
+    settings.startDelayS = Number($("startDelay").value); saveSettings();
+  });
   $("optFull").checked = settings.fullRecording;
   $("optFull").addEventListener("change", () => { settings.fullRecording = $("optFull").checked; saveSettings(); });
   // Full-night audio is recorded by the iOS plugin only.

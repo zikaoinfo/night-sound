@@ -16,6 +16,8 @@ struct SessionRecord: Codable {
     var noiseFloorDbfs: Double
     var sensitivity: String
     var fullRecording: String?
+    /// Seconds between Start and when listening began (falling-asleep time).
+    var startDelayS: Double?
     var envelope: [Float]
     var events: [SonoraEvent]
     var summary: SessionSummary
@@ -27,6 +29,7 @@ struct RecorderOptions {
     var fullRecording = false       // opt-in: keep the whole night as AAC
     var keepClips = true
     var tags: [String] = []
+    var startDelayS: Double = 0
 }
 
 enum RecorderError: LocalizedError {
@@ -64,6 +67,9 @@ final class NightRecorder {
     private var snoreClips: [(index: Int, peak: Double, file: URL)] = []
     private var lastSave = Date.distantPast
     private var lastLevel = Date.distantPast
+    /// Audio before this moment is not analysed or kept (start delay). The
+    /// engine still runs, which is what keeps iOS from suspending the app.
+    private var listenFrom = Date.distantPast
     private var observers: [NSObjectProtocol] = []
 
     static var root: URL {
@@ -115,10 +121,12 @@ final class NightRecorder {
             fullFile = file
             clipCounter = 0
             snoreClips = []
+            listenFrom = Date().addingTimeInterval(max(0, opts.startDelayS))
             session = SessionRecord(
                 id: id, startedAt: Self.iso.string(from: Date()), endedAt: nil,
                 durationS: 0, noiseFloorDbfs: det.noiseFloor, sensitivity: opts.sensitivity,
-                fullRecording: fullName, envelope: [], events: [], summary: SessionSummary(),
+                fullRecording: fullName, startDelayS: max(0, opts.startDelayS),
+                envelope: [], events: [], summary: SessionSummary(),
                 meta: NightMeta(tags: opts.tags))
             save()
         }
@@ -155,7 +163,8 @@ final class NightRecorder {
             guard let s = session, let det = detector else { return ["recording": false] }
             return ["recording": true, "sessionId": s.id, "elapsedS": det.elapsedS,
                     "events": s.events.count, "snores": s.events.filter { $0.isSnore }.count,
-                    "noiseFloorDbfs": det.noiseFloor]
+                    "noiseFloorDbfs": det.noiseFloor,
+                    "waitingS": max(0, listenFrom.timeIntervalSinceNow)]
         }
     }
 
@@ -193,10 +202,17 @@ final class NightRecorder {
 
     private func consume(_ samples: [Float], buffer: AVAudioPCMBuffer) {
         guard let det = detector, session != nil else { return }
+        let now = Date()
+        if now < listenFrom {
+            if now.timeIntervalSince(lastLevel) >= 1 {
+                lastLevel = now
+                onLevel?(["t": 0, "waitingS": listenFrom.timeIntervalSince(now)])
+            }
+            return
+        }
         det.process(samples)
         try? fullFile?.write(from: buffer)
 
-        let now = Date()
         if now.timeIntervalSince(lastLevel) >= 0.25 {
             lastLevel = now
             onLevel?(["t": det.elapsedS, "db": det.lastDb, "floor": det.noiseFloor,

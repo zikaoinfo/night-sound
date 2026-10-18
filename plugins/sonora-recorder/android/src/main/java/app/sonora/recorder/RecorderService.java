@@ -31,6 +31,8 @@ public class RecorderService extends Service {
     interface Callback {
         void onEvent(JSONObject event);
         void onLevel(double t, double db, double floor, double threshold);
+        /** During the start delay, about once a second. */
+        void onWaiting(double remainingS);
     }
 
     private static volatile RecorderService current;
@@ -42,6 +44,8 @@ public class RecorderService extends Service {
     private volatile boolean running = false;
     private volatile double elapsedS = 0;
     private volatile double noiseFloor = -50;
+    /** Audio before this time (ms) isn't analysed: the start delay. */
+    private volatile long listenFrom = 0;
     private Thread thread;
     private AudioRecord record;
     private PowerManager.WakeLock wakeLock;
@@ -59,8 +63,11 @@ public class RecorderService extends Service {
         String sensitivity = intent.getStringExtra("sensitivity");
         boolean keepClips = intent.getBooleanExtra("keepClips", true);
         String[] tags = intent.getStringArrayExtra("tags");
+        double delayS = intent.getDoubleExtra("startDelayS", 0);
+        listenFrom = System.currentTimeMillis() + (long) (Math.max(0, delayS) * 1000);
         try {
-            begin(id != null ? id : SessionStore.newId(), sensitivity != null ? sensitivity : "normal", keepClips, tags);
+            begin(id != null ? id : SessionStore.newId(), sensitivity != null ? sensitivity : "normal", keepClips, tags,
+                  Math.max(0, delayS));
             current = this;
         } catch (Exception e) {
             shutdown();
@@ -78,6 +85,7 @@ public class RecorderService extends Service {
             o.put("elapsedS", elapsedS);
             o.put("events", store.eventCount());
             o.put("noiseFloorDbfs", noiseFloor);
+            o.put("waitingS", Math.max(0, (listenFrom - System.currentTimeMillis()) / 1000.0));
         }
         return o;
     }
@@ -99,7 +107,7 @@ public class RecorderService extends Service {
         return true;
     }
 
-    private void begin(String id, String sensitivity, boolean keepClips, String[] tags) {
+    private void begin(String id, String sensitivity, boolean keepClips, String[] tags, double delayS) {
         int sr = SnoreEngine.SAMPLE_RATE;
         int minBuf = AudioRecord.getMinBufferSize(sr, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
         int source = unprocessedSupported() ? MediaRecorder.AudioSource.UNPROCESSED
@@ -113,7 +121,7 @@ public class RecorderService extends Service {
         engine = new SnoreEngine();
         if ("low".equals(sensitivity)) { engine.threshOverFloorDb = 12; engine.snoreThreshold = 0.6; }
         if ("high".equals(sensitivity)) { engine.threshOverFloorDb = 6; engine.snoreThreshold = 0.4; }
-        store = new SessionStore(this, id, sensitivity, keepClips, tags);
+        store = new SessionStore(this, id, sensitivity, keepClips, tags, delayS);
         engine.setListener((ev, clip) -> {
             try {
                 JSONObject json = store.add(ev, clip);
@@ -143,6 +151,15 @@ public class RecorderService extends Service {
             while (running) {
                 int n = record.read(pcm, 0, pcm.length);
                 if (n <= 0) { Thread.sleep(20); continue; }
+                long now0 = System.currentTimeMillis();
+                if (now0 < listenFrom) {                 // start delay: keep reading, don't analyse
+                    Callback cb = callback;
+                    if (cb != null && now0 - lastLevel >= 1000) {
+                        lastLevel = now0;
+                        cb.onWaiting((listenFrom - now0) / 1000.0);
+                    }
+                    continue;
+                }
                 for (int i = 0; i < n; i++) samples[i] = pcm[i] / 32768f;
                 engine.process(samples, n);
                 elapsedS = engine.elapsedS();

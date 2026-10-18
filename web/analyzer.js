@@ -181,7 +181,10 @@ export class SnoreAnalyzer {
     const flatness = bandCount ? Math.exp(logsum / bandCount) / (band / bandCount + EPS) : 1;
 
     const pcm = this.recorder
-      ? this.recorder.extract(Math.round(startS * this.sr), Math.round(endS * this.sr))
+      // the ring buffer counts samples from the AudioContext's start; event
+      // times count from the first analysed frame (later, with a start delay)
+      ? this.recorder.extract(Math.round((this.startTime + startS) * this.sr),
+                              Math.round((this.startTime + endS) * this.sr))
       : null;
     const [f0, harmonicity] = estimateF0(pcm, this.sr);
 
