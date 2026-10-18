@@ -20,3 +20,7 @@ package-lock.json
 /ios/
 /android/
 .DS_Store
+
+# benchmark model files (download with bench/classify_bench.py header commands)
+bench/model/
+*.h5

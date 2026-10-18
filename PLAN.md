@@ -111,19 +111,21 @@ acceptable battery use.
 
 ---
 
-## 6. Open questions (need your input)
+## 6. Decisions (resolved)
 
-1. **Where does overnight analysis run** — natively in Swift/Kotlin (best
-   battery, more code) or in JS on PCM the native layer buffers (less code, more
-   battery/complexity to keep JS alive)? _Leaning native._
-2. **Keep raw audio?** Store only event clips (privacy + space) or let you opt
-   into a full-night recording? _Leaning event-clips-only, opt-in full._
-3. **Trends/history** — local only, or eventually an optional iCloud/account
-   sync? _v1 local only._
-4. **Scope of "weird sounds"** — just flag loud non-snore events, or try to label
-   them (cough, talking, baby, pet, snore-vs-apnea gasp)? Labelling is a bigger
-   ML effort.
-5. **Name** — ship as "Night Sound" or something else?
+1. **Overnight analysis runs natively** (Swift/Kotlin) for battery; the web UI
+   stays the presentation layer. ✅
+2. **Event clips only by default**, with full-night recording as an opt-in. ✅
+3. **History/trends local-only** for v1 (no account, no sync). ✅
+4. **Label the sounds, on-device.** Two-stage: the rule engine gates events,
+   then a lightweight classifier labels each clip — **Apple SoundAnalysis** on
+   iOS (built in, 0 MB, serverless) and **YAMNet-TFLite** (~4 MB) on Android.
+   Benchmark + harness in `bench/`; the accuracy benchmark that decides tuning
+   needs real labelled nights (Phase 3). ✅
+
+### Still open
+5. **Name** — candidates: Sonora, Lull, Nocturne, Night Sound, Dormi. _Leaning
+   Sonora or Lull._
 
 ---
 
