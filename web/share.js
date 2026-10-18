@@ -11,23 +11,26 @@ const blobToBase64 = (blob) => new Promise((resolve, reject) => {
   fr.readAsDataURL(blob);
 });
 
-let plugins = null;
-async function nativePlugins() {
-  if (!plugins) {
+// Wrapped in an object: a Capacitor plugin proxy answers every property,
+// `then` included, so resolving a promise with it directly would call a
+// native method named "then".
+let sharePlugin = null;
+async function nativeShare() {
+  if (!sharePlugin) {
     const core = await import("./vendor/capacitor-core.js");
-    plugins = { Filesystem: core.registerPlugin("Filesystem"), Share: core.registerPlugin("Share") };
+    sharePlugin = { Share: core.registerPlugin("Share") };
   }
-  return plugins;
+  return sharePlugin;
 }
 
 // files: [{ name, blob, type }]. Resolves "shared", "downloaded" or "cancelled".
 export async function shareFiles(files, title) {
-  if (await getNativeRecorder()) {
-    const { Filesystem, Share } = await nativePlugins();
+  const native = await getNativeRecorder();
+  if (native) {
+    const { Share } = await nativeShare();
     const uris = [];
     for (const f of files) {
-      const { uri } = await Filesystem.writeFile({ path: `share/${f.name}`, data: await blobToBase64(f.blob),
-                                                   directory: "CACHE", recursive: true });
+      const { uri } = await native.plugin.writeShareFile({ name: f.name, data: await blobToBase64(f.blob) });
       uris.push(uri);
     }
     try {

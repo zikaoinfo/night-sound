@@ -171,6 +171,30 @@ public class SonoraRecorderPlugin extends Plugin {
         call.resolve(o);
     }
 
+    /** writeShareFile({ name, data (base64) }) -> { uri }: a file in cache/share for the Share plugin. */
+    @PluginMethod
+    public void writeShareFile(PluginCall call) {
+        String name = call.getString("name");
+        String data = call.getString("data");
+        if (name == null || !name.matches("[A-Za-z0-9._-]{1,100}") || data == null) {
+            call.reject("Missing or invalid file.", "BAD_REQUEST");
+            return;
+        }
+        try {
+            File dir = new File(getContext().getCacheDir(), "share");
+            if (!dir.isDirectory() && !dir.mkdirs()) throw new IllegalStateException("mkdir failed");
+            File file = new File(dir, name);
+            try (java.io.FileOutputStream out = new java.io.FileOutputStream(file)) {
+                out.write(android.util.Base64.decode(data, android.util.Base64.DEFAULT));
+            }
+            JSObject o = new JSObject();
+            o.put("uri", android.net.Uri.fromFile(file).toString());
+            call.resolve(o);
+        } catch (Exception e) {
+            call.reject("Could not write the file.", "WRITE_FAILED", e);
+        }
+    }
+
     private static String[] stringArray(JSArray a) {
         if (a == null) return new String[0];
         String[] out = new String[a.length()];

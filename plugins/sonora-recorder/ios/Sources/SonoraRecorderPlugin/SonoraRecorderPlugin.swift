@@ -25,6 +25,7 @@ public class SonoraRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "deleteSession", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "updateSession", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "importSession", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "writeShareFile", returnType: CAPPluginReturnPromise),
     ]
 
     private let recorder = NightRecorder()
@@ -134,6 +135,27 @@ public class SonoraRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         case .added: call.resolve(["result": "added"])
         case .exists: call.resolve(["result": "exists"])
         case .invalid: call.reject("That doesn't look like a Sonora night.", "INVALID")
+        }
+    }
+
+    /// writeShareFile({ name, data (base64) }) -> { uri }: a file in Caches/share
+    /// for the Share plugin (reports, clips, backups).
+    @objc func writeShareFile(_ call: CAPPluginCall) {
+        guard let name = call.getString("name"),
+              name.range(of: #"^[A-Za-z0-9._-]{1,100}$"#, options: .regularExpression) != nil,
+              let b64 = call.getString("data"), let data = Data(base64Encoded: b64) else {
+            call.reject("Missing or invalid file.", "BAD_REQUEST")
+            return
+        }
+        do {
+            let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("share", isDirectory: true)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let url = dir.appendingPathComponent(name)
+            try data.write(to: url, options: .atomic)
+            call.resolve(["uri": url.absoluteString])
+        } catch {
+            call.reject("Could not write the file.", "WRITE_FAILED", error)
         }
     }
 

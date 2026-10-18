@@ -255,7 +255,7 @@ async function newPage(initScript) {
 // ------------------------------------------------------------ native mode
 // Mock of what the iOS shell injects before the page loads.
 const nativeMock = () => {
-  const methods = ["start", "stop", "status", "listSessions", "getSession", "deleteSession", "updateSession",
+  const methods = ["start", "stop", "status", "listSessions", "getSession", "deleteSession", "updateSession", "writeShareFile",
                    "removeListener"].map((name) => ({ name, rtype: "promise" }));
   methods.push({ name: "addListener", rtype: "callback" });
   window.webkit = { messageHandlers: { bridge: { postMessage() {} } } };
@@ -301,13 +301,19 @@ const nativeMock = () => {
     updateSession: async ({ id, ...meta }) => { state.meta = meta;
       state.saved.forEach((x) => { if (x.id === id) x.meta = meta; }); persist(); return {}; },
     deleteSession: async ({ id }) => { state.saved = state.saved.filter((x) => x.id !== id); persist(); return {}; },
+    writeShareFile: async ({ name, data }) => {
+      window.__written = (window.__written || []).concat({ name, bytes: atob(data).length });
+      return { uri: "file:///cache/share/" + name };
+    },
     removeListener: async () => ({}),
     addListener: (opts, cb) => { (listeners[opts.eventName] ||= []).push(cb); return String(nextId++); },
   };
   window.__mockPlugin = plugin;
   window.Capacitor = {
-    PluginHeaders: [{ name: "SonoraRecorder", methods }],
-    nativePromise: (_p, method, opts) => plugin[method](opts),
+    PluginHeaders: [{ name: "SonoraRecorder", methods }, { name: "Share", methods: [{ name: "share", rtype: "promise" }] }],
+    nativePromise: (p, method, opts) => p === "Share"
+      ? (window.__shared = opts, Promise.resolve({}))
+      : plugin[method](opts),
     nativeCallback: (_p, method, opts, cb) => plugin[method](opts, cb),
     convertFileSrc: (p) => p.replace("file://", "/_capacitor_file_"),
   };
@@ -363,6 +369,15 @@ const nativeMock = () => {
   await page.waitForTimeout(700);
   const meta = await page.evaluate(() => JSON.parse(sessionStorage.getItem("mock")).meta);
   check(meta && meta.rating === 2 && meta.tags.includes("lateMeal"), "native: tags and rating saved via updateSession");
+
+  // Share report in the app: files go to the cache via the plugin, then to the share sheet.
+  await page.click("#btnReport");
+  await page.waitForTimeout(2500);
+  const shared = await page.evaluate(() => ({ s: window.__shared, w: window.__written }));
+  check(shared.s && shared.s.files && shared.s.files[0].endsWith(".pdf") && shared.s.files[0].startsWith("file:///cache/share/"),
+        "native: report handed to the share sheet");
+  check(shared.w && shared.w[0].bytes > 1000, "native: PDF written through the plugin");
+  check(/Report shared/.test(await text(page, "note")), "native: says the report was shared");
 
   // iOS labels other sounds; the list and the summary use the label.
   await page.evaluate(() => {
