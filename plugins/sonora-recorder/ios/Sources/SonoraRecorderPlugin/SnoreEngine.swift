@@ -17,6 +17,8 @@ struct SonoraEvent: Codable {
     var isSnore: Bool
     var intensity: String
     var clip: String?
+    /// What a non-snore sound most likely was ("speech", "cough", ...), if known.
+    var sound: String? = nil
 }
 
 struct SessionSummary: Codable {

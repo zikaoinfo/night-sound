@@ -57,6 +57,7 @@ final class NightRecorder {
     private let target = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000,
                                        channels: 1, interleaved: false)!
     private let queue = DispatchQueue(label: "app.sonora.recorder")
+    private let labeler = SoundLabeler()
     private var converter: AVAudioConverter?
     private var detector: SnoreEngine?
     private var session: SessionRecord?
@@ -226,6 +227,7 @@ final class NightRecorder {
         guard var s = session, let dir = sessionDir else { return }
         var ev = event
         let worthAClip = ev.isSnore || ev.intensity != "quiet"
+        if worthAClip && !ev.isSnore { ev.sound = labeler.label(clip) }
         if options.keepClips && worthAClip {
             let name = String(format: "clips/clip-%05d.wav", clipCounter)
             clipCounter += 1

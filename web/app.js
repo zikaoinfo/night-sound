@@ -308,8 +308,10 @@ function setRunning(on) {
 // ---------------------------------------------------------------- morning summary
 
 function summaryText(r) {
+  const named = [...new Set(r.weirdSounds.map((w) => w.sound).filter(Boolean))].slice(0, 3);
   const others = r.weirdSounds.length
-    ? ` ${r.weirdSounds.length} other loud sound${r.weirdSounds.length > 1 ? "s" : ""} worth a listen.` : "";
+    ? ` ${r.weirdSounds.length} other loud sound${r.weirdSounds.length > 1 ? "s" : ""}` +
+      (named.length ? ` (${named.join(", ")})` : "") + " worth a listen." : "";
   if (!r.snoreEvents) return `No snoring detected in ${fmtDur(r.durationS)}.${others}`;
   const mostly = Object.entries(r.intensityCounts).sort((a, b) => b[1] - a[1])[0][0];
   const eps = r.episodes.length;
@@ -490,15 +492,17 @@ function renderEvents() {
   for (const e of list) {
     const li = document.createElement("li");
     const badge = e.confirmedSnore ? "snore" : "other";
+    const name = e.confirmedSnore ? "snore" : e.sound || "other";   // iOS names other sounds
     li.innerHTML =
       `<span class="ev-time">${fmt(e.startS)}</span>` +
-      `<span class="ev-badge ${badge}">${badge}</span>` +
+      `<span class="ev-badge ${badge}"></span>` +
       `<span class="ev-meta">${e.intensity} · ${e.durationS.toFixed(1)}s · ${e.peakDbfs.toFixed(0)}dB` +
       (e.f0 ? ` · ${e.f0.toFixed(0)}Hz` : "") + `</span>`;
+    li.querySelector(".ev-badge").textContent = name;
     if (e.clip || cur.fullSrc) {
       const btn = document.createElement("button");
       btn.className = "ev-play"; btn.textContent = "▶";
-      btn.setAttribute("aria-label", `Play the ${badge} at ${fmt(e.startS)}`);
+      btn.setAttribute("aria-label", `Play the ${name} at ${fmt(e.startS)}`);
       // the saved clip if there is one, otherwise that moment of the full night
       btn.onclick = () => (e.clip ? playClip(cur.clipSrc(e)) : playFrom(e.startS - 1));
       li.appendChild(btn);

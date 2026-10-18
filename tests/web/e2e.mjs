@@ -314,6 +314,23 @@ const nativeMock = () => {
   await page.waitForTimeout(700);
   const meta = await page.evaluate(() => JSON.parse(sessionStorage.getItem("mock")).meta);
   check(meta && meta.rating === 2 && meta.tags.includes("lateMeal"), "native: tags and rating saved via updateSession");
+
+  // iOS labels other sounds; the list and the summary use the label.
+  await page.evaluate(() => {
+    const st = JSON.parse(sessionStorage.getItem("mock"));
+    st.saved[0].events.push({ startS: 2.0, endS: 2.6, durationS: 0.6, peakDbfs: -8, centroid: 1800, lowRatio: .3,
+      flatness: .5, f0: 0, harmonicity: .1, snoreProb: .2, isSnore: false, intensity: "epic", sound: "speech",
+      clip: "clips/clip-99999.wav" });
+    sessionStorage.setItem("mock", JSON.stringify(st));
+  });
+  await page.reload();
+  await page.click("#tabHistory");
+  await page.waitForTimeout(300);
+  await page.click("#nightList .night");
+  await page.waitForTimeout(300);
+  const badges = await page.$$eval("#eventList .ev-badge", (els) => els.map((e) => e.textContent));
+  check(badges.includes("speech"), "labelled sound shows its name");
+  check(/\(speech\)/.test(await text(page, "scoreSub")), "summary names the other sound");
   check(errors.length === 0, "no page errors" + (errors.length ? ": " + errors.join(" | ") : ""));
   await page.context().close();
 }

@@ -284,6 +284,7 @@ export function computeReport({ events, durationS, noiseFloorDbfs }) {
     episodes,
     weirdSounds: events
       .filter((e) => !e.confirmedSnore && (e.intensity === "loud" || e.intensity === "epic"))
-      .map((e) => ({ startS: e.startS, peakDbfs: e.peakDbfs, intensity: e.intensity, centroid: e.centroid })),
+      .map((e) => ({ startS: e.startS, peakDbfs: e.peakDbfs, intensity: e.intensity, centroid: e.centroid,
+                     sound: e.sound })),
   };
 }

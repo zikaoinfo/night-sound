@@ -186,7 +186,7 @@ Sonora builds all of them in, kept on-device:
 - [x] **P3 Full-night recording + playback** on iOS, Android and web; tap
       the timeline to listen from that moment.
 - [x] **P4 Night report (PDF) to share with a doctor**, sent with the loudest clips (share sheet in the app; download in a browser).
-- [ ] **P5 Sound labels** for other noises (talking, coughing, …) on iOS
+- [x] **P5 Sound labels** for other noises (talking, coughing, …) on iOS
       via Apple's built-in sound classifier.
 - [ ] **P6 Backup & restore** to a file you keep (iCloud Drive / Google
       Drive / anywhere) — the privacy-preserving alternative to a cloud
