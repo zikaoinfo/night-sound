@@ -89,7 +89,11 @@ Engine (Python + JS), web app, Capacitor scaffold.
       bridge (`tests/web/e2e.mjs`).
 - [ ] **On device:** build in Xcode, measure battery + thermals over a night,
       confirm recording survives a phone call.
-- [ ] Android equivalent: foreground service + `MediaRecorder`/`AudioRecord`.
+- [x] Android: foreground service (`RecorderService`) + `AudioRecord` 16 kHz,
+      Java port of the engine (matches the Python engine on the synthetic
+      night: same 37 events, 3 episodes, noise floor), same plugin API.
+      Type-checked against the Android 14 API; `scripts/setup-android.sh`.
+- [ ] Android full-night recording (AAC via MediaCodec) — later.
 **Done when:** an 8-hour screen-off session captures events accurately with
 acceptable battery use.
 

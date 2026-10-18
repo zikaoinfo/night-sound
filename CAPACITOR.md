@@ -53,11 +53,16 @@ In Xcode:
 To push code changes later: edit files in `web/`, then `npx cap sync ios` and
 re-run in Xcode.
 
-### Android (optional, same idea)
+### Android
+
 ```bash
-npx cap add android
-npx cap open android      # Android Studio; run on a device/emulator
+./scripts/setup-android.sh     # needs Android Studio
 ```
+
+On Android the recorder runs as a foreground service, so a "Sonora is
+listening" notification stays up while it records — Android requires that for
+overnight microphone use. Full-night recording is iOS-only for now; event clips
+work on both.
 
 ---
 
