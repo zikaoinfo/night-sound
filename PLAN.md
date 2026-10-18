@@ -131,9 +131,12 @@ acceptable battery use.
 - [ ] Smart/sunrise alarm (optional, later).
 
 ### Phase 5 — Ship
-- [ ] Apple Developer ($99) + Google Play ($25).
-- [ ] TestFlight beta → fix → App Store + Play submissions.
-- [ ] Privacy nutrition labels (easy: "no data collected").
+- [x] Release checklist, store listing copy, App Review notes for background
+      audio, Play foreground-service declaration, Data Safety answers —
+      `STORE.md`.
+- [x] Privacy policy page (`web/privacy.html`, served by GitHub Pages).
+- [ ] **You:** Apple Developer ($99/yr) + Google Play ($25), TestFlight /
+      internal testing, then submit.
 
 ---
 
