@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+demo_out/
+out/
+*.report.json
+*.timeline.png
+# don't commit personal recordings
+*.m4a
+*.mp3
+*.wav
+*.opus
+*.flac
