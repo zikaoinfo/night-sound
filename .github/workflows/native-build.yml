@@ -1,0 +1,76 @@
+# Builds the native apps on every change to them, so compile errors show up
+# here instead of on your Mac.
+#   iOS:     Xcode on a GitHub macOS runner, simulator build, no signing
+#            (signing with your Apple ID still happens in Xcode on your Mac).
+#   Android: Gradle debug build; the APK is attached to the run.
+name: Native builds
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "plugins/**"
+      - "web/**"
+      - "package.json"
+      - "capacitor.config.json"
+      - ".github/workflows/native-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install and generate the iOS project
+        run: |
+          npm install
+          npx cap add ios
+          npx cap sync ios
+      - name: Build for the iOS simulator
+        run: |
+          set -o pipefail
+          xcodebuild -version
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO build 2>&1 | tee ios-build.log \
+            | grep -E "error:|warning: .*(Sonora|SnoreEngine|NightRecorder|SoundLabeler)|\*\* BUILD" || true
+          grep -q "\*\* BUILD SUCCEEDED \*\*" ios-build.log
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build-log
+          path: ios-build.log
+          if-no-files-found: ignore
+
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Install and generate the Android project
+        run: |
+          npm install
+          npx cap add android
+          npx cap sync android
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew --no-daemon assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sonora-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
