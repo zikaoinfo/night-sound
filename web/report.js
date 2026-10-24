@@ -191,13 +191,13 @@ export async function buildReportPdf({ snap, startedAt, meta }, clips = []) {
 
 // Build the PDF plus clips and hand them to the system share sheet.
 // Returns a sentence describing what happened.
-export async function shareReport(night, clipSrc) {
+export async function shareReport(night, clipBlob) {
   const clips = pickClips(night.snap.events);
   const files = [];
   for (const [i, e] of clips.entries()) {
     try {
-      const res = await fetch(clipSrc(e));
-      if (res.ok) files.push({ name: clipName(e, i), blob: await res.blob(), type: "audio/wav" });
+      const blob = await clipBlob(e);
+      if (blob) files.push({ name: clipName(e, i), blob, type: "audio/wav" });
     } catch (_) { /* skip a clip we can't read */ }
   }
   const sent = clips.filter((_, i) => files.some((f) => f.name === clipName(clips[i], i)));

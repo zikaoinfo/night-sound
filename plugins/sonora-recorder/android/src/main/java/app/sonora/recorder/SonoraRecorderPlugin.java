@@ -21,9 +21,13 @@ import org.json.JSONObject;
     permissions = { @Permission(strings = { Manifest.permission.RECORD_AUDIO }, alias = "microphone") }
 )
 public class SonoraRecorderPlugin extends Plugin {
+    private ClipPlayer player;
 
     @Override
     public void load() {
+        player = new ClipPlayer(state -> {
+            try { notifyListeners("playback", JSObject.fromJSONObject(state)); } catch (Exception ignored) { }
+        });
         RecorderService.setCallback(new RecorderService.Callback() {
             @Override
             public void onEvent(JSONObject event) {
@@ -192,6 +196,60 @@ public class SonoraRecorderPlugin extends Plugin {
             call.resolve(o);
         } catch (Exception e) {
             call.reject("Could not write the file.", "WRITE_FAILED", e);
+        }
+    }
+
+    /** A file inside a stored night: "full.m4a" or "clips/clip-00001.wav"; null if invalid or missing. */
+    private File sessionFile(PluginCall call) {
+        String id = call.getString("id"), file = call.getString("file");
+        if (id == null || file == null || !id.matches("\\d{8}-\\d{6}")
+                || !file.matches("full\\.m4a|clips/clip-\\d{5}\\.wav")) return null;
+        File f = new File(new File(SessionStore.root(getContext()), id), file);
+        return f.isFile() ? f : null;
+    }
+
+    /** playFile({ id, file, at? }) — "playback" events report progress. */
+    @PluginMethod
+    public void playFile(PluginCall call) {
+        File f = sessionFile(call);
+        if (f == null) { call.reject("That recording isn't on this phone any more.", "NOT_FOUND"); return; }
+        double at = call.getDouble("at") == null ? 0 : call.getDouble("at");
+        String id = call.getString("id"), file = call.getString("file");
+        getActivity().runOnUiThread(() -> {
+            try { player.play(f, at, id, file); call.resolve(); }
+            catch (Exception e) { call.reject("Couldn't play it.", "PLAY_FAILED", e); }
+        });
+    }
+
+    @PluginMethod
+    public void pausePlayback(PluginCall call) { getActivity().runOnUiThread(() -> { player.pause(); call.resolve(); }); }
+
+    @PluginMethod
+    public void resumePlayback(PluginCall call) { getActivity().runOnUiThread(() -> { player.resume(); call.resolve(); }); }
+
+    @PluginMethod
+    public void seekPlayback(PluginCall call) {
+        double t = call.getDouble("t") == null ? 0 : call.getDouble("t");
+        getActivity().runOnUiThread(() -> { player.seek(t); call.resolve(); });
+    }
+
+    @PluginMethod
+    public void stopPlayback(PluginCall call) { getActivity().runOnUiThread(() -> { player.stop(true); call.resolve(); }); }
+
+    /** readSessionFile({ id, file }) -> { data (base64) } — clips for the report. */
+    @PluginMethod
+    public void readSessionFile(PluginCall call) {
+        File f = sessionFile(call);
+        if (f == null) { call.reject("File not found.", "NOT_FOUND"); return; }
+        try (java.io.FileInputStream in = new java.io.FileInputStream(f)) {
+            byte[] data = new byte[(int) f.length()];
+            int off = 0, n;
+            while (off < data.length && (n = in.read(data, off, data.length - off)) > 0) off += n;
+            JSObject o = new JSObject();
+            o.put("data", android.util.Base64.encodeToString(data, android.util.Base64.NO_WRAP));
+            call.resolve(o);
+        } catch (Exception e) {
+            call.reject("File not found.", "NOT_FOUND", e);
         }
     }
 

@@ -237,12 +237,13 @@ async function newPage(initScript) {
   await page.click("#nightList .night");
   await page.waitForTimeout(600);
   check(!(await page.$eval("#fullPlayer", (el) => el.hidden)), "saved night keeps its full recording");
-  const dur = await page.evaluate(() => new Promise((res) => {
-    const a = document.getElementById("fullAudio");
-    if (a.readyState >= 1) res(a.duration); else a.onloadedmetadata = () => res(a.duration);
-    setTimeout(() => res(-1), 3000);
-  }));
-  check(dur !== -1, `recording loads (duration ${dur})`);
+  await page.click("#playToggle");
+  await page.waitForTimeout(800);
+  check(await text(page, "playToggle") === "❚❚", "play button starts the recording");
+  check(/^0:0[0-9] \/ 0:0[1-9]$/.test(await text(page, "playTime")), `shows position / length (${await text(page, "playTime")})`);
+  await page.click("#playToggle");
+  await page.waitForTimeout(300);
+  check(await text(page, "playToggle") === "▶", "play button pauses");
   const box = await page.$eval("#timeline", (c) => { const r = c.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; });
   await page.mouse.click(box.x + box.w * 0.5, box.y + box.h / 2);
   await page.waitForTimeout(500);
@@ -255,7 +256,7 @@ async function newPage(initScript) {
 // ------------------------------------------------------------ native mode
 // Mock of what the iOS shell injects before the page loads.
 const nativeMock = () => {
-  const methods = ["start", "stop", "status", "listSessions", "getSession", "deleteSession", "updateSession", "writeShareFile",
+  const methods = ["start", "stop", "status", "listSessions", "getSession", "deleteSession", "updateSession", "writeShareFile", "playFile", "pausePlayback", "resumePlayback", "seekPlayback", "stopPlayback", "readSessionFile",
                    "removeListener"].map((name) => ({ name, rtype: "promise" }));
   methods.push({ name: "addListener", rtype: "callback" });
   window.webkit = { messageHandlers: { bridge: { postMessage() {} } } };
@@ -301,6 +302,18 @@ const nativeMock = () => {
     updateSession: async ({ id, ...meta }) => { state.meta = meta;
       state.saved.forEach((x) => { if (x.id === id) x.meta = meta; }); persist(); return {}; },
     deleteSession: async ({ id }) => { state.saved = state.saved.filter((x) => x.id !== id); persist(); return {}; },
+    playFile: async ({ id, file, at }) => {
+      window.__played = (window.__played || []).concat({ id, file, at });
+      clearInterval(window.__pb);
+      let t = at || 0;
+      emit("playback", { state: "playing", t, duration: 30, id, file });
+      window.__pb = setInterval(() => { t += 0.25; emit("playback", { state: "playing", t, duration: 30, id, file }); }, 250);
+    },
+    pausePlayback: async () => { clearInterval(window.__pb); emit("playback", { state: "paused", t: 1, duration: 30 }); },
+    resumePlayback: async () => { emit("playback", { state: "playing", t: 1, duration: 30 }); },
+    seekPlayback: async () => ({}),
+    stopPlayback: async () => { clearInterval(window.__pb); },
+    readSessionFile: async ({ file }) => ({ data: btoa("RIFF" + "x".repeat(2000)) }),
     writeShareFile: async ({ name, data }) => {
       window.__written = (window.__written || []).concat({ name, bytes: atob(data).length });
       return { uri: "file:///cache/share/" + name };
@@ -359,11 +372,27 @@ const nativeMock = () => {
   await page.click("#nightList .night");
   await page.waitForTimeout(300);
   check(!!(await page.$("#eventList .ev-play")), "a saved night's clips are playable");
-  const clipSrcOk = await page.evaluate(() => typeof window.Capacitor.convertFileSrc === "function");
-  check(clipSrcOk, "clip URLs go through convertFileSrc");
-  const fullSrc = await page.$eval("#fullAudio", (a) => a.getAttribute("src") || "");
-  check(!(await page.$eval("#fullPlayer", (el) => el.hidden)) && fullSrc.endsWith("/full.m4a")
-        && fullSrc.startsWith("/_capacitor_file_"), `native full recording offered (${fullSrc})`);
+  // Clips and the full night play natively through the plugin.
+  await page.click("#eventList .ev-play");
+  await page.waitForTimeout(300);
+  let last = await page.evaluate(() => window.__played.at(-1));
+  check(last && /^clips\/clip-\d+\.wav$/.test(last.file) && last.id === "20261018-230000",
+        `native: clip played by the plugin (${JSON.stringify(last)})`);
+  check(!(await page.$eval("#fullPlayer", (el) => el.hidden)), "native: full recording offered");
+  await page.click("#playToggle");
+  await page.waitForTimeout(600);
+  last = await page.evaluate(() => window.__played.at(-1));
+  check(last && last.file === "full.m4a", "native: play button plays the full night");
+  check(await text(page, "playToggle") === "❚❚" && /^0:0[1-9] \//.test(await text(page, "playTime")),
+        `native: progress shown (${await text(page, "playTime")})`);
+  const tl = await page.$eval("#timeline", (c) => { const r = c.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; });
+  await page.mouse.click(tl.x + tl.w * 0.75, tl.y + tl.h / 2);
+  await page.waitForTimeout(300);
+  last = await page.evaluate(() => window.__played.at(-1));
+  check(last && last.file === "full.m4a" && last.at > 0, `native: timeline tap seeks (at=${last && last.at && last.at.toFixed(1)})`);
+  await page.click("#playToggle");
+  await page.waitForTimeout(300);
+  check(await text(page, "playToggle") === "▶", "native: pause");
   await page.click('#factorChips .chip:has-text("Late meal")');
   await page.click('label:has(#rate2)');
   await page.waitForTimeout(700);
@@ -377,6 +406,7 @@ const nativeMock = () => {
   check(shared.s && shared.s.files && shared.s.files[0].endsWith(".pdf") && shared.s.files[0].startsWith("file:///cache/share/"),
         "native: report handed to the share sheet");
   check(shared.w && shared.w[0].bytes > 1000, "native: PDF written through the plugin");
+  check(shared.s.files.some((f) => f.endsWith(".wav")), "native: clips read through the plugin and attached");
   check(/Report shared/.test(await text(page, "note")), "native: says the report was shared");
 
   // iOS labels other sounds; the list and the summary use the label.

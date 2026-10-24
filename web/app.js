@@ -7,9 +7,10 @@
 
 import { RingRecorder, encodeWav } from "./recorder.js";
 import { SnoreAnalyzer, CFG, computeReport } from "./analyzer.js";
-import { getNativeRecorder, platform, clipUrl } from "./native.js";
+import { getNativeRecorder, platform } from "./native.js";
 import { listNights, loadNight, deleteNight, saveWebNight, updateNightMeta, normMeta,
-         exportBackup, importBackup } from "./history.js";
+         exportBackup, importBackup, readNativeFile } from "./history.js";
+import { createPlayer, refKey } from "./player.js";
 import { shareFiles } from "./share.js";
 import { FACTORS, REMEDIES, customId, labelOf, isRemedy, tagImpact } from "./tags.js";
 import { shareReport } from "./report.js";
@@ -111,10 +112,10 @@ class WebSource {
     this.sessionId = await saveWebNight(this.snapshot(), this.startedAt, this.meta, this.fullBlob);
   }
 
-  fullSrc() {
+  full() {
     if (!this.fullBlob) return null;
     if (!this.fullUrl) this.fullUrl = URL.createObjectURL(this.fullBlob);
-    return this.fullUrl;
+    return { url: this.fullUrl };
   }
 
   snapshot() {
@@ -128,9 +129,15 @@ class WebSource {
     };
   }
 
-  clipSrc(ev) {
-    return ev.clip instanceof Float32Array
-      ? URL.createObjectURL(encodeWav(ev.clip, this.analyzer.sr)) : null;
+  clip(ev) {
+    if (!(ev.clip instanceof Float32Array)) return null;
+    this.clipUrls ||= new WeakMap();          // kept off the event so it never gets saved
+    if (!this.clipUrls.has(ev)) this.clipUrls.set(ev, URL.createObjectURL(encodeWav(ev.clip, this.analyzer.sr)));
+    return { url: this.clipUrls.get(ev) };
+  }
+
+  async clipBlob(ev) {
+    return ev.clip instanceof Float32Array ? encodeWav(ev.clip, this.analyzer.sr) : null;
   }
 }
 
@@ -221,30 +228,35 @@ class NativeSource {
     };
   }
 
-  clipSrc(ev) {
-    return typeof ev.clip === "string" && this.baseUrl ? clipUrl(this.baseUrl, ev.clip) : null;
+  clip(ev) {
+    return typeof ev.clip === "string" && this.sessionId ? { id: this.sessionId, file: ev.clip } : null;
+  }
+
+  async clipBlob(ev) {
+    return typeof ev.clip === "string" ? readNativeFile(this.plugin, this.sessionId, ev.clip) : null;
   }
 
   // Only once the night has ended: the file is finalised on stop.
-  fullSrc() {
-    return this.fullRecording && this.baseUrl ? clipUrl(this.baseUrl, this.fullRecording) : null;
+  full() {
+    return this.fullRecording && this.sessionId ? { id: this.sessionId, file: this.fullRecording } : null;
   }
 }
 
 // ---------------------------------------------------------------- state
 
 let source = null;     // the live (or last) recording
-let stored = null;     // a saved night being viewed: { id, startedAt, snap, clipSrc }
+let stored = null;     // a saved night being viewed (see history.loadNight)
 let running = false;
 let uiTimer = null;
 let wakeLock = null;
 
 // What the Tonight tab is showing right now.
+// clip(e) / full are player refs (or null); clipBlob(e) is the clip's audio.
 function current() {
-  if (stored) return { snap: stored.snap, clipSrc: stored.clipSrc, fullSrc: stored.fullSrc };
+  if (stored) return { snap: stored.snap, clip: stored.clip, full: stored.full, clipBlob: stored.clipBlob };
   const snap = source && source.snapshot();
-  return snap ? { snap, clipSrc: (ev) => source.clipSrc(ev),
-                  fullSrc: running ? null : source.fullSrc() } : null;
+  return snap ? { snap, clip: (ev) => source.clip(ev), clipBlob: (ev) => source.clipBlob(ev),
+                  full: running ? null : source.full() } : null;
 }
 
 async function makeSource() {
@@ -352,7 +364,7 @@ function render() {
     $("liveClock").textContent = fmt(r.durationS);
     $("scoreSub").textContent = summaryText(r);
   }
-  setFullPlayer(cur.fullSrc);
+  setFullPlayer(cur.full);
   $("btnReport").hidden = running && !stored;
   drawTimeline(cur.snap, r);
 }
@@ -367,7 +379,7 @@ async function shareNightReport() {
   btn.disabled = true;
   $("note").textContent = "Preparing the report…";
   try {
-    $("note").textContent = await shareReport(night, cur.clipSrc);
+    $("note").textContent = await shareReport(night, cur.clipBlob);
   } catch (err) {
     $("note").textContent = "Couldn't make the report: " + (err.message || err);
   } finally {
@@ -377,23 +389,42 @@ async function shareNightReport() {
 
 // ---------------------------------------------------------------- full-night playback
 
-let playerSrc = null;
+let fullRef = null;          // the full-night recording on screen, if any
 let timelineDur = 1;
+let player = null;           // created at boot (needs to know if we're in the app)
+let playing = { key: "", playing: false, t: 0, duration: 0 };
 
-function setFullPlayer(src) {
-  if (src === playerSrc) return;
-  playerSrc = src || null;
-  const audio = $("fullAudio");
-  audio.pause();
-  if (playerSrc) audio.src = playerSrc; else audio.removeAttribute("src");
-  $("fullPlayer").hidden = !playerSrc;
-  $("timeline").classList.toggle("seekable", !!playerSrc);
+function setFullPlayer(ref) {
+  if (refKey(ref) === refKey(fullRef)) return;
+  if (player && playing.key && playing.key === refKey(fullRef)) player.stop();
+  fullRef = ref || null;
+  $("fullPlayer").hidden = !fullRef;
+  $("timeline").classList.toggle("seekable", !!fullRef);
+  renderPlayer();
 }
 
-function playFrom(t) {
-  const audio = $("fullAudio");
-  audio.currentTime = Math.max(0, t);
-  audio.play().catch((err) => { $("note").textContent = "Couldn't play the recording: " + err.message; });
+function renderPlayer() {
+  const onFull = fullRef && playing.key === refKey(fullRef);
+  $("playToggle").textContent = onFull && playing.playing ? "❚❚" : "▶";
+  $("playToggle").setAttribute("aria-label", onFull && playing.playing ? "Pause the recording" : "Play the recording");
+  $("playTime").textContent = onFull ? `${fmt(playing.t)} / ${fmt(playing.duration || timelineDur)}`
+                                     : `0:00 / ${fmt(timelineDur)}`;
+}
+
+async function playRef(ref, at, what) {
+  try {
+    await player.play(ref, at);
+  } catch (err) {
+    $("note").textContent = `Couldn't play the ${what}: ` + (err.message || err);
+  }
+}
+
+const playFrom = (t) => fullRef && playRef(fullRef, Math.max(0, t), "recording");
+
+async function togglePlay() {
+  if (!fullRef) return;
+  if (playing.key === refKey(fullRef)) await player.toggle();
+  else await playFrom(0);
 }
 
 function updateMeter(info) {
@@ -470,9 +501,8 @@ function drawTimeline(snap, r) {
     }
   }
 
-  const audio = $("fullAudio");
-  if (playerSrc && audio.currentTime > 0) {          // playhead
-    const x = Math.min(w - 1, (audio.currentTime / dur) * w);
+  if (fullRef && playing.key === refKey(fullRef) && playing.t > 0) {   // playhead
+    const x = Math.min(w - 1, (playing.t / dur) * w);
     ctx.fillStyle = getToken("--fg");
     ctx.fillRect(x - 1, 0, 2, h);
   }
@@ -501,23 +531,17 @@ function renderEvents() {
       `<span class="ev-meta">${e.intensity} · ${e.durationS.toFixed(1)}s · ${e.peakDbfs.toFixed(0)}dB` +
       (e.f0 ? ` · ${e.f0.toFixed(0)}Hz` : "") + `</span>`;
     li.querySelector(".ev-badge").textContent = name;
-    if (e.clip || cur.fullSrc) {
+    const ref = cur.clip(e);
+    if (ref || cur.full) {
       const btn = document.createElement("button");
       btn.className = "ev-play"; btn.textContent = "▶";
       btn.setAttribute("aria-label", `Play the ${name} at ${fmt(e.startS)}`);
       // the saved clip if there is one, otherwise that moment of the full night
-      btn.onclick = () => (e.clip ? playClip(cur.clipSrc(e)) : playFrom(e.startS - 1));
+      btn.onclick = () => (ref ? playRef(ref, 0, "clip") : playFrom(e.startS - 1));
       li.appendChild(btn);
     }
     ul.appendChild(li);
   }
-}
-
-function playClip(src) {
-  if (!src) return;
-  const a = new Audio(src);
-  if (src.startsWith("blob:")) a.onended = () => URL.revokeObjectURL(src);
-  a.play().catch((err) => { $("note").textContent = "Couldn't play that clip: " + err.message; });
 }
 
 function exportJson() {
@@ -839,11 +863,29 @@ function initSettings() {
 }
 
 $("timeline").addEventListener("click", (e) => {
-  if (!playerSrc) return;
+  if (!fullRef) return;
   const rect = $("timeline").getBoundingClientRect();
   playFrom(((e.clientX - rect.left) / rect.width) * timelineDur);
 });
-$("fullAudio").addEventListener("timeupdate", () => { if (current()) render(); });
+$("playToggle").addEventListener("click", togglePlay);
+
+// Created once we know whether we're in the app (native playback) or a browser.
+const playerReady = getNativeRecorder().then((native) => {
+  player = createPlayer({
+    plugin: native && native.plugin, audio: $("fullAudio"),
+    onChange: (s) => {
+      const moved = Math.abs(s.t - playing.t) > 0.2 || s.playing !== playing.playing || s.key !== playing.key;
+      playing = s;
+      renderPlayer();
+      if (moved && current()) drawTimelineOnly();
+    },
+  });
+});
+
+function drawTimelineOnly() {
+  const cur = current();
+  if (cur) drawTimeline(cur.snap, computeReport(cur.snap));
+}
 
 $("btnStart").addEventListener("click", start);
 $("btnStop").addEventListener("click", stop);

@@ -71,7 +71,11 @@
 
       <canvas id="timeline" class="timeline" width="800" height="150" role="img" aria-label="Timeline of the night: snores and other sounds"></canvas>
       <div class="fullplayer" id="fullPlayer" hidden>
-        <audio id="fullAudio" controls preload="metadata"></audio>
+        <div class="player-row">
+          <button class="btn small" id="playToggle" type="button" aria-label="Play the recording">▶</button>
+          <span id="playTime" class="play-time">0:00 / 0:00</span>
+        </div>
+        <audio id="fullAudio" preload="metadata" hidden></audio>
         <p class="hint">Tap the timeline to listen from that moment.</p>
       </div>
       <div class="legend">

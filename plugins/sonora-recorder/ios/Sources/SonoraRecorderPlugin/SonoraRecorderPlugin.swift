@@ -26,9 +26,16 @@ public class SonoraRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "updateSession", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "importSession", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "writeShareFile", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "readSessionFile", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "playFile", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "pausePlayback", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "resumePlayback", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "seekPlayback", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "stopPlayback", returnType: CAPPluginReturnPromise),
     ]
 
     private let recorder = NightRecorder()
+    private let player = ClipPlayer()
 
     override public func load() {
         recorder.onEvent = { [weak self] ev in
@@ -36,6 +43,10 @@ public class SonoraRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         recorder.onLevel = { [weak self] level in
             self?.notifyListeners("level", data: level)
+        }
+        player.isRecording = { [weak self] in self?.recorder.isRecording ?? false }
+        player.onState = { [weak self] state in
+            self?.notifyListeners("playback", data: state)
         }
     }
 
@@ -52,6 +63,7 @@ public class SonoraRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
             DispatchQueue.main.async {
+                self.player.stop()
                 do {
                     call.resolve(["sessionId": try self.recorder.start(opts)])
                 } catch {
@@ -157,6 +169,62 @@ public class SonoraRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         } catch {
             call.reject("Could not write the file.", "WRITE_FAILED", error)
         }
+    }
+
+    // MARK: playback and session files
+
+    /// A file inside a stored night: "full.m4a" or "clips/clip-00001.wav".
+    private func sessionFile(_ call: CAPPluginCall) -> URL? {
+        guard let id = call.getString("id"), let file = call.getString("file"),
+              id.range(of: #"^\d{8}-\d{6}$"#, options: .regularExpression) != nil,
+              file.range(of: #"^(full\.m4a|clips/clip-\d{5}\.wav)$"#, options: .regularExpression) != nil
+        else { return nil }
+        let url = NightRecorder.root.appendingPathComponent(id).appendingPathComponent(file)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    /// playFile({ id, file, at? }) — "playback" events report progress.
+    @objc func playFile(_ call: CAPPluginCall) {
+        guard let url = sessionFile(call) else {
+            call.reject("That recording isn't on this phone any more.", "NOT_FOUND")
+            return
+        }
+        let tag: [String: Any] = ["id": call.getString("id") ?? "", "file": call.getString("file") ?? ""]
+        let at = call.getDouble("at", 0)
+        DispatchQueue.main.async {
+            do {
+                try self.player.play(url: url, at: at, tag: tag)
+                call.resolve()
+            } catch {
+                call.reject("Couldn't play it: \(error.localizedDescription)", "PLAY_FAILED", error)
+            }
+        }
+    }
+
+    @objc func pausePlayback(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { self.player.pause(); call.resolve() }
+    }
+
+    @objc func resumePlayback(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { self.player.resume(); call.resolve() }
+    }
+
+    @objc func seekPlayback(_ call: CAPPluginCall) {
+        let t = call.getDouble("t", 0)
+        DispatchQueue.main.async { self.player.seek(to: t); call.resolve() }
+    }
+
+    @objc func stopPlayback(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { self.player.stop(); call.resolve() }
+    }
+
+    /// readSessionFile({ id, file }) -> { data (base64) } — clips for the report.
+    @objc func readSessionFile(_ call: CAPPluginCall) {
+        guard let url = sessionFile(call), let data = try? Data(contentsOf: url) else {
+            call.reject("File not found.", "NOT_FOUND")
+            return
+        }
+        call.resolve(["data": data.base64EncodedString()])
     }
 
     // MARK: helpers

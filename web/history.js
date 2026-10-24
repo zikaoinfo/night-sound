@@ -2,9 +2,11 @@
 //   In the app: the native plugin's session folders (with clips).
 //   In a browser: IndexedDB (events, per-second loudness, and the full-night
 //   audio if it was recorded; short clips are only kept in memory).
-// Every night comes back in one shape: { id, startedAt, meta, snap, clipSrc, fullSrc }.
+// Every night comes back in one shape: { id, startedAt, meta, snap, clip, full, clipBlob }
+// where clip(event) and full are player refs (see player.js) or null, and
+// clipBlob(event) resolves the clip's audio for the report.
 
-import { getNativeRecorder, clipUrl } from "./native.js";
+import { getNativeRecorder } from "./native.js";
 import { computeReport } from "./analyzer.js";
 
 const DB_NAME = "sonora";
@@ -73,8 +75,9 @@ export async function loadNight(id) {
       id, startedAt: s.startedAt, meta: normMeta(s.meta),
       snap: { events: s.events, envelope: envelopeToPoints(s.envelope),
               durationS: s.durationS, noiseFloorDbfs: s.noiseFloorDbfs },
-      clipSrc: (ev) => (ev.clip ? clipUrl(s.baseUrl, ev.clip) : null),
-      fullSrc: s.fullRecording ? clipUrl(s.baseUrl, s.fullRecording) : null,
+      clip: (ev) => (ev.clip ? { id, file: ev.clip } : null),
+      full: s.fullRecording ? { id, file: s.fullRecording } : null,
+      clipBlob: (ev) => readNativeFile(native.plugin, id, ev.clip),
     };
   }
   const n = await withStore("readonly", (s) => s.get(id));
@@ -83,8 +86,9 @@ export async function loadNight(id) {
     id, startedAt: n.startedAt, meta: normMeta(n.meta),
     snap: { events: n.events, envelope: envelopeToPoints(n.envelope),
             durationS: n.durationS, noiseFloorDbfs: n.noiseFloorDbfs },
-    clipSrc: () => null,
-    fullSrc: await fullAudioUrl(id),
+    clip: () => null,
+    full: await fullAudioRef(id),
+    clipBlob: async () => null,
   };
 }
 
@@ -95,10 +99,18 @@ export async function deleteNight(id) {
   return withStore("readwrite", (s) => s.delete(id));
 }
 
-async function fullAudioUrl(id) {
+// A clip or recording stored by the native plugin, as a Blob.
+export async function readNativeFile(plugin, id, file) {
+  if (!file) return null;
+  const { data } = await plugin.readSessionFile({ id, file });
+  const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
+  return new Blob([bytes], { type: file.endsWith(".wav") ? "audio/wav" : "audio/mp4" });
+}
+
+async function fullAudioRef(id) {
   try {
     const rec = await withStore("readonly", (s) => s.get(id), AUDIO);
-    return rec ? URL.createObjectURL(rec.blob) : null;
+    return rec ? { url: URL.createObjectURL(rec.blob) } : null;
   } catch (_) {
     return null;
   }
