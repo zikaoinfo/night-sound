@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # One-command iOS setup for Sonora (run on your Mac from the repo root).
 #
-#   ./scripts/setup-ios.sh
+#   ./scripts/setup-ios.sh            # first time, or after git pull
+#   ./scripts/setup-ios.sh --clean    # start over: regenerates ios/ and clears
+#                                     # Xcode's caches (fixes "Missing package product")
 #
 # Installs JS deps, generates the Xcode project if missing, syncs the web app
 # and native plugin into it, adds the required Info.plist keys, and opens Xcode.
@@ -14,6 +16,14 @@ if [[ "$(uname)" != "Darwin" ]]; then
   exit 1
 fi
 command -v node >/dev/null || { echo "Install Node 20+ first." >&2; exit 1; }
+
+if [[ "${1:-}" == "--clean" ]]; then
+  echo "Cleaning: ios/, node_modules/, Xcode build and package caches for this app"
+  osascript -e 'quit app "Xcode"' 2>/dev/null || true
+  rm -rf ios node_modules package-lock.json
+  rm -rf ~/Library/Developer/Xcode/DerivedData/App-*
+  rm -rf ~/Library/Caches/org.swift.swiftpm ~/Library/org.swift.swiftpm
+fi
 
 npm install
 
@@ -34,6 +44,12 @@ if ! $PB -c "Print :UIBackgroundModes" "$PLIST" >/dev/null 2>&1; then
   $PB -c "Add :UIBackgroundModes:0 string audio" "$PLIST"
 elif ! $PB -c "Print :UIBackgroundModes" "$PLIST" | grep -q audio; then
   $PB -c "Add :UIBackgroundModes:0 string audio" "$PLIST"
+fi
+
+# The app should only use these packages; anything else is a stale project.
+if grep -q "capacitor/filesystem" ios/App/CapApp-SPM/Package.swift; then
+  echo "ios/ still references @capacitor/filesystem — run: ./scripts/setup-ios.sh --clean" >&2
+  exit 1
 fi
 
 echo
