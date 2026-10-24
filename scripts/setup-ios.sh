@@ -46,6 +46,14 @@ elif ! $PB -c "Print :UIBackgroundModes" "$PLIST" | grep -q audio; then
   $PB -c "Add :UIBackgroundModes:0 string audio" "$PLIST"
 fi
 
+# Sonora's icon and launch screen instead of Capacitor's defaults
+# (sources drawn by scripts/make_icons.py).
+XC="ios/App/App/Assets.xcassets"
+cp assets/icon-only.png "$XC/AppIcon.appiconset/AppIcon-512@2x.png"
+for f in splash-2732x2732.png splash-2732x2732-1.png splash-2732x2732-2.png; do
+  cp assets/splash-dark.png "$XC/Splash.imageset/$f"
+done
+
 # The app should only use these packages; anything else is a stale project.
 if grep -q "capacitor/filesystem" ios/App/CapApp-SPM/Package.swift; then
   echo "ios/ still references @capacitor/filesystem — run: ./scripts/setup-ios.sh --clean" >&2
