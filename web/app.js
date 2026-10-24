@@ -11,6 +11,7 @@ import { getNativeRecorder, platform } from "./native.js";
 import { listNights, loadNight, deleteNight, saveWebNight, updateNightMeta, normMeta,
          exportBackup, importBackup, readNativeFile } from "./history.js";
 import { createPlayer, refKey } from "./player.js";
+import { createSleepScreen } from "./sleep.js";
 import { shareFiles } from "./share.js";
 import { FACTORS, REMEDIES, customId, labelOf, isRemedy, tagImpact } from "./tags.js";
 import { shareReport } from "./report.js";
@@ -266,8 +267,18 @@ async function makeSource() {
     : new WebSource(() => renderEvents(), updateMeter);
 }
 
+let starting = false;
+
 async function start() {
+  if (running || starting) return;
+  starting = true;
+  try { await startNight(); } finally { starting = false; }
+}
+
+async function startNight() {
   closeStored();
+  showTab("tonight");
+  if (player) player.stop();
   $("note").textContent = "";
   const tags = [...settings.nextTags];
   try {
@@ -287,10 +298,13 @@ async function start() {
   saveSettings();
   setRunning(true);
   renderNightCard();
+  sleepScreen.show(source.startedAt);
   if (!source.native) await requestWakeLock();
 }
 
 async function stop() {
+  if (!running) return;
+  sleepScreen.hide();
   setRunning(false);
   try { await source.stop(); } catch (err) { $("note").textContent = "Stop failed: " + (err.message || err); }
   await releaseWakeLock();
@@ -306,6 +320,7 @@ function setRunning(on) {
   if (on) uiTimer = setInterval(render, 1000);
   $("btnStart").hidden = on;
   $("btnStop").hidden = !on;
+  $("btnNight").hidden = !on;
   $("btnExport").hidden = false;
   $("intensity").hidden = false;
   $("liveState").textContent = on ? "listening" : "stopped";
@@ -428,6 +443,7 @@ async function togglePlay() {
 }
 
 function updateMeter(info) {
+  sleepScreen.level(info);
   if (stored) return;
   if (info.waitingS > 0) {
     $("liveState").textContent = "waiting";
@@ -887,6 +903,12 @@ function drawTimelineOnly() {
   if (cur) drawTimeline(cur.snap, computeReport(cur.snap));
 }
 
+const sleepScreen = createSleepScreen({
+  onWake: () => stop(),
+  onHide: () => {},
+});
+$("btnNight").addEventListener("click", () => sleepScreen.show());
+
 $("btnStart").addEventListener("click", start);
 $("btnStop").addEventListener("click", stop);
 $("btnExport").addEventListener("click", exportJson);
@@ -961,5 +983,16 @@ $("note").textContent =
     source = s;
     setRunning(true);
     render(); renderEvents();
+    sleepScreen.show(s.startedAt);
   }
+  // Siri / Shortcuts: "Start sleep" and "Wake up" (native/ios/SonoraIntents.swift).
+  // A command can be waiting from a cold start, or arrive while we're open.
+  await native.plugin.addListener("command", (c) => handleCommand(c.command));
+  const { command } = await native.plugin.takeCommand();
+  if (command) handleCommand(command);
 })();
+
+function handleCommand(command) {
+  if (command === "startSleep") start();
+  else if (command === "wakeUp") stop();
+}

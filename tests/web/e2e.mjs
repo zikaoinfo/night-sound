@@ -46,6 +46,11 @@ const check = (cond, msg) => {
   console.log(`${cond ? "  ok  " : "  FAIL"} ${msg}`);
   if (!cond) failures++;
 };
+// The sleep screen covers the app while recording; "Show details" first.
+async function stopNight(page) {
+  if (!(await page.$eval("#sleepScreen", (el) => el.hidden))) await page.click("#sleepHide");
+  await page.click("#btnStop");
+}
 const text = (page, id) => page.$eval("#" + id, (el) => el.textContent);
 
 async function newPage(initScript) {
@@ -75,7 +80,7 @@ async function newPage(initScript) {
   await page.waitForTimeout(4000);
   check((await text(page, "liveState")) === "listening", "listening after start");
   check((await text(page, "liveClock")) !== "0:00", "clock advances");
-  await page.click("#btnStop");
+  await stopNight(page);
   await page.waitForTimeout(500);
   check((await text(page, "liveState")) === "stopped", "stopped after stop");
   check(/snor/i.test(await text(page, "scoreSub")), "morning summary sentence shown");
@@ -201,6 +206,34 @@ async function newPage(initScript) {
   await page.context().close();
 }
 
+// ------------------------------------------------------------ sleep screen
+{
+  console.log("sleep screen (web)");
+  const { page, errors } = await newPage();
+  await page.goto(URL);
+  await page.click("#btnStart");
+  await page.waitForTimeout(1200);
+  check(!(await page.$eval("#sleepScreen", (el) => el.hidden)), "sleep screen opens when the night starts");
+  check(/^\d{1,2}:\d{2}/.test(await text(page, "sleepClock")), `shows the time (${await text(page, "sleepClock")})`);
+  check(/^Since /.test(await text(page, "sleepSub")), "shows when it started");
+  const box = await page.$eval("#holdStop", (b) => { const r = b.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+  await page.mouse.move(box.x, box.y);
+  await page.mouse.down(); await page.waitForTimeout(400); await page.mouse.up();
+  await page.waitForTimeout(300);
+  check((await text(page, "liveState")) === "listening", "a short tap doesn't stop the night");
+  await page.click("#sleepHide");
+  check(await page.$eval("#sleepScreen", (el) => el.hidden), "Show details goes back to the app");
+  await page.click("#btnNight");
+  check(!(await page.$eval("#sleepScreen", (el) => el.hidden)), "Night view reopens it");
+  await page.mouse.move(box.x, box.y);
+  await page.mouse.down(); await page.waitForTimeout(1800); await page.mouse.up();
+  await page.waitForTimeout(800);
+  check((await text(page, "liveState")) === "stopped", "press and hold wakes up (stops the night)");
+  check(await page.$eval("#sleepScreen", (el) => el.hidden), "sleep screen closes in the morning");
+  check(errors.length === 0, "no page errors" + (errors.length ? ": " + errors.join(" | ") : ""));
+  await page.context().close();
+}
+
 // ------------------------------------------------------------ start delay
 {
   console.log("start delay (web)");
@@ -213,7 +246,7 @@ async function newPage(initScript) {
   check(/starts listening in/i.test(await text(page, "scoreSub")), "shows a countdown");
   await page.waitForTimeout(2600);
   check((await text(page, "liveState")) === "listening", "starts listening after the delay");
-  await page.click("#btnStop");
+  await stopNight(page);
   check(errors.length === 0, "no page errors" + (errors.length ? ": " + errors.join(" | ") : ""));
   await page.context().close();
 }
@@ -228,7 +261,7 @@ async function newPage(initScript) {
   await page.click("#btnStart");
   await page.waitForTimeout(3500);
   check(await page.$eval("#fullPlayer", (el) => el.hidden), "no player while recording");
-  await page.click("#btnStop");
+  await stopNight(page);
   await page.waitForTimeout(800);
   check(!(await page.$eval("#fullPlayer", (el) => el.hidden)), "player appears after the night");
   await page.reload();
@@ -256,7 +289,7 @@ async function newPage(initScript) {
 // ------------------------------------------------------------ native mode
 // Mock of what the iOS shell injects before the page loads.
 const nativeMock = () => {
-  const methods = ["start", "stop", "status", "listSessions", "getSession", "deleteSession", "updateSession", "writeShareFile", "playFile", "pausePlayback", "resumePlayback", "seekPlayback", "stopPlayback", "readSessionFile",
+  const methods = ["start", "stop", "status", "listSessions", "getSession", "deleteSession", "updateSession", "writeShareFile", "playFile", "pausePlayback", "resumePlayback", "seekPlayback", "stopPlayback", "readSessionFile", "takeCommand",
                    "removeListener"].map((name) => ({ name, rtype: "promise" }));
   methods.push({ name: "addListener", rtype: "callback" });
   window.webkit = { messageHandlers: { bridge: { postMessage() {} } } };
@@ -313,6 +346,7 @@ const nativeMock = () => {
     resumePlayback: async () => { emit("playback", { state: "playing", t: 1, duration: 30 }); },
     seekPlayback: async () => ({}),
     stopPlayback: async () => { clearInterval(window.__pb); },
+    takeCommand: async () => { const c = sessionStorage.getItem("cmd"); sessionStorage.removeItem("cmd"); return { command: c }; },
     readSessionFile: async ({ file }) => ({ data: btoa("RIFF" + "x".repeat(2000)) }),
     writeShareFile: async ({ name, data }) => {
       window.__written = (window.__written || []).concat({ name, bytes: atob(data).length });
@@ -322,6 +356,7 @@ const nativeMock = () => {
     addListener: (opts, cb) => { (listeners[opts.eventName] ||= []).push(cb); return String(nextId++); },
   };
   window.__mockPlugin = plugin;
+  window.__emit = emit;
   window.Capacitor = {
     PluginHeaders: [{ name: "SonoraRecorder", methods }, { name: "Share", methods: [{ name: "share", rtype: "promise" }] }],
     nativePromise: (p, method, opts) => p === "Share"
@@ -359,7 +394,7 @@ const nativeMock = () => {
   await page.waitForTimeout(800);
   check((await text(page, "liveState")) === "listening", "reattaches to a running session after relaunch");
 
-  await page.click("#btnStop");
+  await stopNight(page);
   await page.waitForTimeout(300);
   check((await text(page, "liveState")) === "stopped", "stopped after stop");
   check(Number(await text(page, "statEvents")) >= 2, "summary counts snore events");
@@ -425,6 +460,22 @@ const nativeMock = () => {
   const badges = await page.$$eval("#eventList .ev-badge", (els) => els.map((e) => e.textContent));
   check(badges.includes("speech"), "labelled sound shows its name");
   check(/\(speech\)/.test(await text(page, "scoreSub")), "summary names the other sound");
+  check(errors.length === 0, "no page errors" + (errors.length ? ": " + errors.join(" | ") : ""));
+  await page.context().close();
+}
+
+// ------------------------------------------------------------ Siri / Shortcuts
+{
+  console.log("Siri: start sleep / wake up (mock iOS bridge)");
+  const { page, errors } = await newPage(nativeMock);
+  await page.addInitScript(() => { if (!sessionStorage.getItem("seen")) { sessionStorage.setItem("seen", "1"); sessionStorage.setItem("cmd", "startSleep"); } });
+  await page.goto(URL);
+  await page.waitForTimeout(1000);
+  check((await text(page, "liveState")) === "listening", "\"Start sleep\" from a cold start begins the night");
+  check(!(await page.$eval("#sleepScreen", (el) => el.hidden)), "and shows the sleep screen");
+  await page.evaluate(() => window.__emit("command", { command: "wakeUp" }));
+  await page.waitForTimeout(800);
+  check((await text(page, "liveState")) === "stopped", "\"Wake up\" while open ends the night");
   check(errors.length === 0, "no page errors" + (errors.length ? ": " + errors.join(" | ") : ""));
   await page.context().close();
 }

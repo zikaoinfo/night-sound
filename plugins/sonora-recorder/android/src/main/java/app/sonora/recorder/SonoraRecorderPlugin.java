@@ -22,6 +22,7 @@ import org.json.JSONObject;
 )
 public class SonoraRecorderPlugin extends Plugin {
     private ClipPlayer player;
+    private final android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
 
     @Override
     public void load() {
@@ -215,26 +216,26 @@ public class SonoraRecorderPlugin extends Plugin {
         if (f == null) { call.reject("That recording isn't on this phone any more.", "NOT_FOUND"); return; }
         double at = call.getDouble("at") == null ? 0 : call.getDouble("at");
         String id = call.getString("id"), file = call.getString("file");
-        getActivity().runOnUiThread(() -> {
+        main.post(() -> {
             try { player.play(f, at, id, file); call.resolve(); }
             catch (Exception e) { call.reject("Couldn't play it.", "PLAY_FAILED", e); }
         });
     }
 
     @PluginMethod
-    public void pausePlayback(PluginCall call) { getActivity().runOnUiThread(() -> { player.pause(); call.resolve(); }); }
+    public void pausePlayback(PluginCall call) { main.post(() -> { player.pause(); call.resolve(); }); }
 
     @PluginMethod
-    public void resumePlayback(PluginCall call) { getActivity().runOnUiThread(() -> { player.resume(); call.resolve(); }); }
+    public void resumePlayback(PluginCall call) { main.post(() -> { player.resume(); call.resolve(); }); }
 
     @PluginMethod
     public void seekPlayback(PluginCall call) {
         double t = call.getDouble("t") == null ? 0 : call.getDouble("t");
-        getActivity().runOnUiThread(() -> { player.seek(t); call.resolve(); });
+        main.post(() -> { player.seek(t); call.resolve(); });
     }
 
     @PluginMethod
-    public void stopPlayback(PluginCall call) { getActivity().runOnUiThread(() -> { player.stop(true); call.resolve(); }); }
+    public void stopPlayback(PluginCall call) { main.post(() -> { player.stop(true); call.resolve(); }); }
 
     /** readSessionFile({ id, file }) -> { data (base64) } — clips for the report. */
     @PluginMethod

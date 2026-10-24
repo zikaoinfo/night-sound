@@ -32,6 +32,7 @@ public class SonoraRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "resumePlayback", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "seekPlayback", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stopPlayback", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "takeCommand", returnType: CAPPluginReturnPromise),
     ]
 
     private let recorder = NightRecorder()
@@ -47,6 +48,12 @@ public class SonoraRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         player.isRecording = { [weak self] in self?.recorder.isRecording ?? false }
         player.onState = { [weak self] state in
             self?.notifyListeners("playback", data: state)
+        }
+        // Siri / Shortcuts ("Start sleep", "Wake up") — see native/ios/SonoraIntents.swift.
+        NotificationCenter.default.addObserver(forName: Notification.Name("SonoraCommand"),
+                                               object: nil, queue: .main) { [weak self] _ in
+            guard let self, let command = Self.popCommand() else { return }
+            self.notifyListeners("command", data: ["command": command], retainUntilConsumed: true)
         }
     }
 
@@ -225,6 +232,23 @@ public class SonoraRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         call.resolve(["data": data.base64EncodedString()])
+    }
+
+    // MARK: Siri / Shortcuts commands
+
+    private static let commandKey = "sonora.pendingCommand"
+
+    private static func popCommand() -> String? {
+        let d = UserDefaults.standard
+        guard let c = d.string(forKey: commandKey) else { return nil }
+        d.removeObject(forKey: commandKey)
+        return c
+    }
+
+    /// takeCommand() -> { command: "startSleep" | "wakeUp" | null }: a command
+    /// that arrived before the web app was listening (cold start from Siri).
+    @objc func takeCommand(_ call: CAPPluginCall) {
+        call.resolve(["command": Self.popCommand() ?? NSNull()])
     }
 
     // MARK: helpers

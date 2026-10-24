@@ -210,3 +210,50 @@ body { margin: 0; background: var(--bg); color: var(--fg); }
 .player-row { display: flex; align-items: center; gap: 12px; }
 .player-row .btn { min-width: 48px; font-size: 1rem; }
 .play-time { font-variant-numeric: tabular-nums; color: var(--muted); font-size: .85rem; }
+
+/* ---- sleep screen: a deliberately dark, single-look night view ---- */
+.sleep {
+  --sky-top: #101735; --sky-bottom: #02030a; --moon-glow: rgba(169, 184, 245, .45);
+  --ink: #dfe5ff; --ink-dim: rgba(223, 229, 255, .55); --pulse: #7aa2f7;
+  position: fixed; inset: 0; z-index: 50; color: var(--ink); color-scheme: dark;
+  background: radial-gradient(120% 80% at 50% 0%, var(--sky-top) 0%, #070b1f 55%, var(--sky-bottom) 100%);
+  display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+  padding: calc(env(safe-area-inset-top, 0px) + 16px) max(20px, env(safe-area-inset-right, 0px))
+           calc(env(safe-area-inset-bottom, 0px) + 28px) max(20px, env(safe-area-inset-left, 0px));
+  overflow: hidden; user-select: none; -webkit-user-select: none;
+}
+.sleep-stars { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.sleep > :not(canvas) { position: relative; }
+.sleep-top { width: 100%; display: flex; justify-content: flex-end; }
+.sleep-link { background: none; border: 0; color: var(--ink-dim); font: inherit; font-size: .85rem; padding: 8px; cursor: pointer; }
+.sleep-link:focus-visible, .hold:focus-visible { outline: 2px solid var(--pulse); outline-offset: 4px; border-radius: 8px; }
+.sleep-center { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; }
+.sleep-moon { width: 96px; height: 96px; filter: drop-shadow(0 0 22px var(--moon-glow)); margin-bottom: 18px;
+  animation: moon-float 9s ease-in-out infinite; }
+@keyframes moon-float { 50% { transform: translateY(-6px); } }
+.sleep-clock { font-size: clamp(4.2rem, 22vw, 7.5rem); font-weight: 200; letter-spacing: -2px; line-height: 1;
+  font-variant-numeric: tabular-nums; }
+.sleep-date { color: var(--ink-dim); font-size: 1rem; letter-spacing: .5px; }
+.sleep-status { margin-top: 26px; display: flex; align-items: center; gap: 10px; font-size: .95rem; letter-spacing: 1.5px;
+  text-transform: uppercase; color: var(--ink); }
+.sleep-pulse { width: 10px; height: 10px; border-radius: 50%; background: var(--pulse); opacity: .45;
+  box-shadow: 0 0 0 0 rgba(122, 162, 247, .5); animation: breathe 4s ease-in-out infinite; transition: opacity .3s; }
+.sleep-pulse.heard { opacity: 1; animation: heard 1s ease-out; }
+@keyframes breathe { 50% { opacity: .9; box-shadow: 0 0 0 6px rgba(122, 162, 247, 0); } }
+@keyframes heard { from { box-shadow: 0 0 0 0 rgba(122, 162, 247, .7); } to { box-shadow: 0 0 0 14px rgba(122, 162, 247, 0); } }
+.sleep-sub { color: var(--ink-dim); font-size: .85rem; font-variant-numeric: tabular-nums; min-height: 1.2em; }
+.sleep-bottom { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.hold { position: relative; width: 112px; height: 112px; border-radius: 50%; border: 0; cursor: pointer;
+  background: rgba(255, 255, 255, .06); color: var(--ink); font: inherit; touch-action: none; }
+.hold svg { position: absolute; inset: 0; transform: rotate(-90deg); }
+.hold-track { fill: none; stroke: rgba(255, 255, 255, .12); stroke-width: 3; }
+.hold-ring { fill: none; stroke: var(--pulse); stroke-width: 3; stroke-linecap: round;
+  stroke-dasharray: 339.3; stroke-dashoffset: 339.3; transition: stroke-dashoffset .25s ease-out; }
+.hold.holding .hold-ring { stroke-dashoffset: 0; transition: stroke-dashoffset 1.5s linear; }
+.hold-label { position: relative; font-size: .95rem; letter-spacing: .5px; }
+.sleep-hint { margin: 0; color: var(--ink-dim); font-size: .8rem; }
+@media (prefers-reduced-motion: reduce) {
+  .sleep-moon, .sleep-pulse { animation: none; }
+  .hold.holding .hold-ring { transition-duration: .01s; }
+}
+.sleep-ampm { font-size: .22em; font-weight: 400; letter-spacing: 1px; margin-left: .35em; vertical-align: .25em; color: var(--ink-dim); }

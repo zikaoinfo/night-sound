@@ -31,6 +31,7 @@ if [[ ! -d ios ]]; then
   npx cap add ios
 fi
 npx cap sync ios
+node scripts/ios-add-intents.mjs      # Siri / Shortcuts: "Start sleep", "Wake up"
 
 PLIST="ios/App/App/Info.plist"
 PB=/usr/libexec/PlistBuddy

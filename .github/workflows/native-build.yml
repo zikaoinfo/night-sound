@@ -11,6 +11,8 @@ on:
     paths:
       - "plugins/**"
       - "web/**"
+      - "native/**"
+      - "scripts/ios-add-intents.mjs"
       - "package.json"
       - "capacitor.config.json"
       - ".github/workflows/native-build.yml"
@@ -33,6 +35,7 @@ jobs:
           npm install
           npx cap add ios
           npx cap sync ios
+          node scripts/ios-add-intents.mjs
       - name: Build for the iOS simulator
         run: |
           set -o pipefail

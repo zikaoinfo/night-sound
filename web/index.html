@@ -86,6 +86,7 @@
 
       <div class="controls" id="controls">
         <button id="btnStart" class="btn primary">Start listening</button>
+        <button id="btnNight" class="btn" hidden>Night view</button>
         <button id="btnStop" class="btn" hidden>Stop</button>
         <button id="btnReport" class="btn" hidden>Share report</button>
         <button id="btnExport" class="btn ghost" hidden>Export JSON</button>
@@ -178,6 +179,42 @@
 
     <p class="note" id="note"></p>
   </main>
+
+  <section id="sleepScreen" class="sleep" hidden aria-label="Sleep screen" aria-live="polite">
+    <canvas id="stars" class="sleep-stars" aria-hidden="true"></canvas>
+    <div class="sleep-top">
+      <button id="sleepHide" class="sleep-link" type="button">Show details</button>
+    </div>
+    <div class="sleep-center">
+      <svg class="sleep-moon" viewBox="0 0 100 100" aria-hidden="true">
+        <defs>
+          <radialGradient id="moonFill" cx="38%" cy="38%" r="70%">
+            <stop offset="0%" stop-color="#f4f2ff" />
+            <stop offset="100%" stop-color="#a9b8f5" />
+          </radialGradient>
+          <mask id="moonCut">
+            <rect width="100" height="100" fill="#fff" />
+            <circle cx="64" cy="38" r="31" fill="#000" />
+          </mask>
+        </defs>
+        <circle cx="50" cy="50" r="33" fill="url(#moonFill)" mask="url(#moonCut)" />
+      </svg>
+      <div id="sleepClock" class="sleep-clock">--:--</div>
+      <div id="sleepDate" class="sleep-date"></div>
+      <div class="sleep-status"><span id="sleepPulse" class="sleep-pulse" aria-hidden="true"></span><span id="sleepStatus">Listening</span></div>
+      <div id="sleepSub" class="sleep-sub"></div>
+    </div>
+    <div class="sleep-bottom">
+      <button id="holdStop" class="hold" type="button" aria-describedby="holdHint">
+        <svg viewBox="0 0 120 120" aria-hidden="true">
+          <circle class="hold-track" cx="60" cy="60" r="54" />
+          <circle class="hold-ring" id="holdRing" cx="60" cy="60" r="54" />
+        </svg>
+        <span class="hold-label">Wake up</span>
+      </button>
+      <p class="sleep-hint" id="holdHint">Press and hold to end the night</p>
+    </div>
+  </section>
 
   <script type="module" src="app.js"></script>
 </body>
